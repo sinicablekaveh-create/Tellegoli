@@ -597,15 +597,15 @@ public final class MainActivity extends Activity {
     button("شروع جستجوی مشتریان و گروه‌ها",this::startSalesDiscovery);
 
     LinearLayout automaticCard=newCard();
-    automaticCard.addView(text("جستجوی خودکار روزانه",17,true));
+    automaticCard.addView(text("جستجوی خودکار وب هر ۱۵ دقیقه",17,true));
     CheckBox daily=new CheckBox(this);
-    daily.setText("فعال باشد؛ حتی وقتی برنامه بسته است");
+    daily.setText("جستجوی وب در پس‌زمینه فعال باشد");
     daily.setMinHeight(dp(52));
     daily.setChecked(getSharedPreferences("discovery",MODE_PRIVATE)
         .getBoolean("periodic",true));
     daily.setOnCheckedChangeListener((v,enabled)->setAutomaticDiscovery(enabled));
     automaticCard.addView(daily);
-    automaticCard.addView(text("وب‌سایت‌های عمومی در پس‌زمینه بررسی می‌شوند. زمان اجرا تقریبی است؛ جستجوی تلگرام فقط هنگام باز بودن برنامه و آماده بودن حساب انجام می‌شود.",12,false));
+    automaticCard.addView(text("هر ۱۵ دقیقه یک نوبت وب‌گردی برنامه‌ریزی می‌شود. وقتی صف پیام فعال باشد، بین ارسال‌های ۸ دقیقه‌ای هم جستجوی وب انجام می‌شود. زمان دقیق در اندروید تضمین نمی‌شود.",12,false));
     card(automaticCard);
 
     LinearLayout stats=ElectricUi.row(this);
@@ -623,6 +623,11 @@ public final class MainActivity extends Activity {
     stats.addView(groupStat,groupWidth);
     ElectricUi.addBlock(this,page,stats,12);
 
+    ElectricUi.section(this,page,"جستجوی وب ۱۵ دقیقه‌ای + صف ۸ دقیقه‌ای",null);
+    int waitingMessages=0;
+    for(JSONObject item:ScheduledQueue.snapshot(getApplicationContext()))
+      if("PENDING".equals(item.optString("status")))waitingMessages++;
+    note("صف پیام: "+(ScheduledQueue.enabled(this)?"فعال":"متوقف")+" | پیام تأییدشدهٔ منتظر: "+waitingMessages+" | هر پیام فقط یک نوبت. شماره یا گروهِ کشف‌شده خودکار به گیرندگان اضافه نمی‌شود.");
     ElectricUi.section(this,page,"دسترسی سریع",null);
     quickAction("▣","مخاطبان و شماره‌های تماس",
         "دیدن نتایج و جستجو در شماره‌های ذخیره‌شده",()->draw(2));
@@ -637,7 +642,7 @@ public final class MainActivity extends Activity {
     statusCard.addView(text("گزارش جستجو",17,true));
     discoveryUi=new DiscoveryUi(this,statusCard,null,true);
     card(statusCard);
-    note("جستجو هیچ پیامی ارسال نمی‌کند. تنظیمات پیشرفته و Exa در بخش تنظیمات هستند.");
+    note("جستجوی وب مستقل و خودکار است؛ فقط صف پیام‌های ازقبل‌تأییدشده می‌تواند با فاصلهٔ حداقل ۸ دقیقه ارسال کند.");
   }
 
   private void setAutomaticDiscovery(boolean enabled) {
@@ -647,9 +652,11 @@ public final class MainActivity extends Activity {
       preferences.edit().putLong("sales_auto_started",0).apply();
       DiscoverySchedule.enable(this);
       ((DiscoveryApplication)getApplication()).maybeAutoDiscover();
-      toast("جستجوی روزانه فعال شد؛ جستجوی وب در پس‌زمینه زمان‌بندی می‌شود.");
+      if(ScheduledQueue.enabled(this))QueueGapDiscovery.scheduleWeb(this);
+      toast("جستجوی وب با فاصلهٔ تقریبی ۱۵ دقیقه فعال شد؛ در فاصلهٔ پیام‌های تأییدشده هم بررسی می‌شود.");
     } else {
       DiscoverySchedule.disable(this);
+      QueueGapDiscovery.cancel(this);
       DiscoveryCoordinator.get(this).stopByUser();
       toast("جستجوی خودکار خاموش شد. اطلاعات قبلی محفوظ‌اند.");
     }
@@ -838,14 +845,14 @@ public final class MainActivity extends Activity {
     button("ورود مستقیم کلیدواژه‌ها از Excel",this::requestKeywordImport);
 
     CheckBox automatic=new CheckBox(this);
-    automatic.setText("جستجوی خودکار روزانه");
+    automatic.setText("جستجوی خودکار وب هر ۱۵ دقیقه");
     automatic.setMinHeight(dp(52));
     automatic.setChecked(getSharedPreferences("discovery",MODE_PRIVATE)
         .getBoolean("periodic",true));
     automatic.setOnCheckedChangeListener((v,on)->setAutomaticDiscovery(on));
     page.addView(automatic);
-    note("در حالت روشن، وب عمومی به‌صورت تقریبی روزی یک‌بار در پس‌زمینه بررسی می‌شود؛ گروه‌های تلگرام فقط در حضور شما بررسی می‌شوند.");
-    button("تنظیمات پیشرفتهٔ زمان‌بندی",this::advancedScheduleDialog);
+    note("در حالت روشن، جستجوی وب عمومی به‌صورت تقریبی هر ۱۵ دقیقه انجام می‌شود و در فاصلهٔ نوبت‌های صف پیام هم ادامه می‌یابد. جستجوی گروه‌های تلگرام فقط با حساب آماده و برنامهٔ باز انجام می‌شود.");
+    button("تنظیمات منابع و محدودیت جستجو",()->DiscoveryUi.sources(this));
     android.content.SharedPreferences schedule=getSharedPreferences("discovery",MODE_PRIVATE);
     note("آخرین تلاش: "+formatTime(schedule.getLong("last_attempt",0))+" | آخرین دریافت موفق: "+formatTime(schedule.getLong("last_success",0))+" | شمارهٔ جدید: "+schedule.getInt("last_new",0));
     button("پشتیبان‌گیری مخاطبان و پیش‌نویس‌ها",()->requestBackup(false));
@@ -863,23 +870,6 @@ public final class MainActivity extends Activity {
         .show(),true,true),10);
   }
 
-
-  private void advancedScheduleDialog() {
-    CheckBox frequent=new CheckBox(this);
-    frequent.setText("جستجوی وب هر ۱۵ دقیقه به‌جای روزانه");
-    frequent.setMinHeight(dp(52));
-    frequent.setChecked(getSharedPreferences("discovery",MODE_PRIVATE)
-        .getBoolean("periodic_15_minutes",false));
-    new AlertDialog.Builder(this)
-        .setTitle("زمان‌بندی پیشرفته")
-        .setMessage("جستجوی پس‌زمینه تقریبی است؛ به اینترنت و باتری وابسته است. این گزینه فقط روی وب عمومی اثر دارد، نه ارسال پیام.")
-        .setView(frequent)
-        .setNegativeButton("انصراف",null)
-        .setPositiveButton("ذخیره",(dialog,which)->{
-          DiscoverySchedule.setFifteenMinutes(this,frequent.isChecked());
-          toast("زمان‌بندی ذخیره شد.");
-        }).show();
-  }
 
   private String formatTime(long time) {return time==0?"هنوز اجرا نشده":android.text.format.DateFormat.format("yyyy/MM/dd HH:mm",time).toString();}
 
