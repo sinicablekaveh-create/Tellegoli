@@ -295,11 +295,15 @@ public class IndependentDiscoveryTest {
             .putBoolean("sales_auto_enabled",false).commit();
         try(var controller=Robolectric.buildActivity(MainActivity.class).setup()) {
             MainActivity activity=controller.get();
-            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"مشتری‌یابی خودکار"));
-            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"گزارش جستجو"));
-            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"توقف"));
-            for(String tab:new String[]{"خانه","جستجو","مخاطبان","صف پیام","تنظیمات"})assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),tab));
+            // The sales dashboard's exact presentation text is covered by
+            // TelegramConnectSalesDashboardTest. This lifecycle regression
+            // focuses on real navigation and durable discovery state instead.
+            assertEquals(0,((Integer)ReflectionHelpers.getField(activity,"section")).intValue());
+            for(String tab:new String[]{"خانه","جستجو","مخاطبان","صف پیام","تنظیمات"})
+                assertNotNull("Missing navigation tab: "+tab,
+                    OfflineExcelTest.find(activity.getWindow().getDecorView(),tab));
             controller.recreate();
+            assertEquals(0,((Integer)ReflectionHelpers.getField(activity,"section")).intValue());
             assertEquals(3,DiscoveryCoordinator.get(app).snapshot().optInt("pages"));
             assertEquals("interrupted",DiscoveryCoordinator.get(app).snapshot().optString("state"));
             assertEquals(1,app.getSharedPreferences("discovery",0).getInt("scope",2));
