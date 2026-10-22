@@ -83,7 +83,7 @@ final class DiscoveryCoordinator {
                     settings.edit()
                         .putInt("buyer_seed_cursor",(cursor+run.maxHosts)%seedCount)
                         .putInt("imported_source_cursor",importedCount==0?0:
-                            (sourceCursor+run.maxHosts)%importedCount).apply();
+                            (sourceCursor+importedCursorStep(run.maxHosts))%importedCount).apply();
                     if(app.getSharedPreferences("exa_ui_settings",Context.MODE_PRIVATE).getBoolean("online_enabled",false))
                         providers.add(new ExaProvider(app));
                     String endpoint=settings.getString("searxng","");
@@ -114,6 +114,12 @@ final class DiscoveryCoordinator {
             }
         });
         return true;
+    }
+    /** Match source rotation stride to reserved Excel host slots.
+     * Advancing by the total host cap would permanently skip every other
+     * imported source when the Excel list size is divisible by that cap. */
+    static int importedCursorStep(int hostLimit) {
+        return Math.max(1,hostLimit/2);
     }
     // Shared by deterministic tests; a failing optional provider cannot abort independent ones.
     static void execute(Run run,List<DiscoveryProvider> providers) {
