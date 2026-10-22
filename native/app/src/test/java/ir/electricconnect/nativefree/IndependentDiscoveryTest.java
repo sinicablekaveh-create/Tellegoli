@@ -295,7 +295,8 @@ public class IndependentDiscoveryTest {
             .putBoolean("sales_auto_enabled",false).commit();
         try(var controller=Robolectric.buildActivity(MainActivity.class).setup()) {
             MainActivity activity=controller.get();
-            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"جست‌وجوگر خودکار"));
+            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"مشتری‌یابی خودکار"));
+            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"گزارش جستجو"));
             assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"توقف"));
             for(String tab:new String[]{"خانه","جستجو","مخاطبان","صف پیام","تنظیمات"})assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),tab));
             controller.recreate();
