@@ -55,11 +55,10 @@ final class DiscoveryCoordinator {
         executor.execute(()->{
             try(PublicHttp http=new PublicHttp(run.cancelled)) {
                 run.http=http;run.scope=scope;run.background=background;
-                // A messaging gap is an explicit limited research window; recheck
-                // previously permitted pages after eight minutes, not forbidden URLs.
-                boolean queueWeb=background && scope==0 && ScheduledQueue.enabled(app)
-                    && QueueGapDiscovery.enabled(app);
-                data.renewOldPages(queueWeb?ScheduledQueue.MIN_GAP:TimeUnit.HOURS.toMillis(24));
+                // Source rotation favors NEW pending websites. Previously checked
+                // business pages cool down for 24h even while a message queue is
+                // active; an 8-minute queue gap is for new research, not hammering sites.
+                data.renewOldPages(TimeUnit.HOURS.toMillis(24));
                 List<DiscoveryProvider> providers=new ArrayList<>();
                 android.content.SharedPreferences settings=app.getSharedPreferences("discovery",Context.MODE_PRIVATE);
                 run.maxPages=Math.max(1,Math.min(6,settings.getInt("pages_per_host",4)));
@@ -74,7 +73,14 @@ final class DiscoveryCoordinator {
                     int seedCount=PublicWebsiteContactsProvider.DEFAULT_SEEDS.size();
                     int cursor=Math.floorMod(settings.getInt("buyer_seed_cursor",0),seedCount);
                     run.buyerSeedCursor=cursor;
-                    settings.edit().putInt("buyer_seed_cursor",(cursor+run.maxHosts)%seedCount).apply();
+                    int importedCount=(int)data.importedSourceCount();
+                    int sourceCursor=importedCount==0?0:Math.floorMod(
+                        settings.getInt("imported_source_cursor",0),importedCount);
+                    run.importedSourceCursor=sourceCursor;
+                    settings.edit()
+                        .putInt("buyer_seed_cursor",(cursor+run.maxHosts)%seedCount)
+                        .putInt("imported_source_cursor",importedCount==0?0:
+                            (sourceCursor+run.maxHosts)%importedCount).apply();
                     if(app.getSharedPreferences("exa_ui_settings",Context.MODE_PRIVATE).getBoolean("online_enabled",false))
                         providers.add(new ExaProvider(app));
                     String endpoint=settings.getString("searxng","");
@@ -159,7 +165,7 @@ final class DiscoveryCoordinator {
         final List<String> seeds=new ArrayList<>();
         List<String> topics=Arrays.asList(TOPICS);
         PublicHttp http;Runnable changed;
-        int pages,saved,groups,duplicates,errors,topic,total,scope,maxPages=4,maxHosts=4,buyerSeedCursor;
+        int pages,saved,groups,duplicates,errors,topic,total,scope,maxPages=4,maxHosts=4,buyerSeedCursor,importedSourceCursor;
         boolean background,telegramPending,queuePass,telegramCompleted,interrupted;
         String state="running",current="",note="";
         Run(DiscoveryData data,AtomicBoolean cancelled,Runnable changed){this.data=data;this.cancelled=cancelled;this.changed=changed;}
