@@ -58,6 +58,9 @@ public final class DiscoveryApplication extends Application {
 
     @Override public void onCreate() {
         super.onCreate();
+        // Restore independent, user-enabled group discovery after Android
+        // restarts the process; no UI or messaging consent is inferred.
+        TelegramBackgroundSchedule.bootstrap(this);
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityStarted(Activity a) {
                 if(started++==0) {
