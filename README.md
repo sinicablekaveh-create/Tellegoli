@@ -8,7 +8,7 @@
 - Java: 17 | AGP: 8.9.1 | Gradle: 8.11.1 | compileSdk: 35
 - Source: `native/app/src/main/`
 - Tests: `native/app/src/test/`
-- Codemagic workflow: `tellegoli`? **از نام واقعی `electric-connect-0102-android` در `codemagic.yaml` استفاده کنید.**
+- Codemagic workflow ID: `electric-connect-0102-android`
 
 ## ساخت APK با Codemagic
 1. در [Codemagic](https://codemagic.io/) مخزن عمومی [Tellegoli](https://github.com/sinicablekaveh-create/Tellegoli) را متصل کنید.
