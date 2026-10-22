@@ -25,19 +25,24 @@ final class UnifiedExcelImport {
         final String name,link,chatId,source;
         Group(String n,String l,String i,String s){name=n;link=l;chatId=i;source=s;}
     }
+    static final class WebSource {
+        final String url,title;
+        WebSource(String u,String t){url=u;title=t;}
+    }
     static final class Parsed {
         final List<Contact> contacts=new ArrayList<>();
         final List<Group> groups=new ArrayList<>();
         final List<String> buyers=new ArrayList<>();
         final List<String> groupTerms=new ArrayList<>();
+        final List<WebSource> sources=new ArrayList<>();
         int rejected;
-        int count(){return contacts.size()+groups.size()+buyers.size()+groupTerms.size();}
+        int count(){return contacts.size()+groups.size()+buyers.size()+groupTerms.size()+sources.size();}
     }
     static final class Report {
-        int contacts,groups,buyers,groupTerms,rejected;
+        int contacts,groups,buyers,groupTerms,sources,rejected;
         String describe(){return "ورودی اکسل: "+contacts+" شمارهٔ تماس، "+groups+
             " گروه، "+buyers+" عبارت مشتری‌یابی، "+groupTerms+
-            " عبارت گروه‌ها اضافه شد؛ "+rejected+" ردیف نامعتبر/تکراری کنار گذاشته شد.";}
+            " عبارت گروه‌ها و "+sources+" منبع وب جدید اضافه شد؛ "+rejected+" ردیف نامعتبر/تکراری کنار گذاشته شد.";}
     }
 
     static Parsed read(InputStream input) throws Exception {
@@ -70,7 +75,7 @@ final class UnifiedExcelImport {
                 readSheet(part.getValue(),shared,parsed);
             }
         if(sheets==0||parsed.count()==0)
-            throw new IOException("هیچ مخاطب، گروه یا کلیدواژهٔ معتبری در اکسل نیست.");
+            throw new IOException("هیچ مخاطب، گروه، منبع وب یا کلیدواژهٔ معتبری در اکسل نیست.");
         if(parsed.count()>4000)throw new IOException("حداکثر ۴۰۰۰ ردیف در یک فایل.");
         return parsed;
     }
@@ -143,7 +148,10 @@ final class UnifiedExcelImport {
             ||s.equals("نام گروه")||s.equals("لینک گروه")||s.equals("لینک عمومی گروه")
             ||s.equals("شناسه گروه")||s.equals("نام کسب و کار")||s.equals("نام شرکت")
             ||s.equals("شماره تماس")||s.equals("شماره تلفن")
-            ||s.equals("نوع داده")||s.equals("حوزه")||s.equals("عنوان");
+            ||s.equals("نوع داده")||s.equals("حوزه")||s.equals("عنوان")
+            ||s.equals("آدرس سایت")||s.equals("لینک سایت")||s.equals("نشانی وب")
+            ||s.equals("وب سایت")||s.equals("website")||s.equals("url")
+            ||s.equals("آدرس وب")||s.equals("لینک منبع");
     }
     private static String field(Map<String,String> heads,Map<String,String> row,String... aliases){
         for(String alias:aliases){
@@ -159,13 +167,30 @@ final class UnifiedExcelImport {
         String type=SearchText.normalize(field(heads,row,"نوع داده","نوع"));
         String scope=SearchText.normalize(field(heads,row,"حوزه","بخش","موضوع"));
         String term=field(heads,row,"کلیدواژه","keywords","keyword","عبارت جستجو","عبارت جست و جو");
-        if(heads.isEmpty())term=first(row);
+        if(heads.isEmpty()&&!first(row).startsWith("https://"))term=first(row);
         if(!term.isEmpty()){
             if(scope.contains("گروه")||type.contains("گروه")){
                 if(GroupKeywords.allowed(term))parsed.groupTerms.add(term);else parsed.rejected++;
             } else {
                 if(LeadKeywords.allowed(term))parsed.buyers.add(term);else parsed.rejected++;
             }
+            return;
+        }
+        String site=field(heads,row,"آدرس سایت","لینک سایت","نشانی وب",
+            "وب سایت","وب‌سایت","website","url","آدرس وب","لینک منبع","نشانی منبع");
+        if(heads.isEmpty() && first(row).startsWith("https://"))site=first(row);
+        String contactNumber=field(heads,row,"شماره تماس","شماره تلفن","تلفن","موبایل","شماره");
+        boolean sourceRow=type.contains("منبع وب")||type.contains("منبع جستجو")
+            ||type.contains("سایت")||type.contains("وب سایت")
+            ||(!site.isEmpty() && contactNumber.isEmpty() && !type.contains("گروه")
+                && !type.contains("مخاطب") && !type.contains("نتیجه وب"));
+        if(sourceRow){
+            if(site.isEmpty())site=field(heads,row,"شماره / شناسه / آدرس","شماره/شناسه/آدرس");
+            try{
+                String safe=PublicHttp.validate(site.trim(),null);
+                String label=field(heads,row,"نام شرکت","نام کسب و کار","نام کسب‌وکار","عنوان","نام");
+                parsed.sources.add(new WebSource(safe,label.trim()));
+            }catch(Exception ignored){parsed.rejected++;}
             return;
         }
         String name=field(heads,row,"نام کسب و کار","نام کسب‌وکار","نام شرکت","نام مخاطب","نام گروه","عنوان","نام");
@@ -242,6 +267,22 @@ final class UnifiedExcelImport {
                 v.put("source",g.source.trim().isEmpty()?"ورودی اکسل کاربر":g.source.trim());
                 v.put("added",System.currentTimeMillis());
                 if(db.insertWithOnConflict("imported_groups",null,v,SQLiteDatabase.CONFLICT_IGNORE)!=-1)r.groups++;
+                else r.rejected++;
+            }
+            // Website URLs are validated twice (parse + apply). A malformed source
+            // can never become a network request or a new Telegram recipient.
+            int savedSources=(int)discovery.importedSourceCount();
+            for(WebSource site:parsed.sources){
+                String safe;
+                try{safe=PublicHttp.validate(site.url,null);}
+                catch(Exception invalid){r.rejected++;continue;}
+                if(savedSources>=DiscoveryData.MAX_IMPORTED_SOURCES){r.rejected++;continue;}
+                ContentValues v=new ContentValues();
+                v.put("url",safe);
+                v.put("title",site.title.length()>240?site.title.substring(0,240):site.title);
+                v.put("added",System.currentTimeMillis());
+                if(db.insertWithOnConflict("imported_web_sources",null,v,
+                    SQLiteDatabase.CONFLICT_IGNORE)!=-1){r.sources++;savedSources++;}
                 else r.rejected++;
             }
             // Deduplicate within Excel; each family retains its own maximum of 50.
