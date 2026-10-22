@@ -4,7 +4,7 @@
 # Do not embed personal Telegram/Exa secrets in the public repository.
 workflows:
   electric-connect-0102-android:
-    name: Tellegoli 0.10.2 - Tests, lint and standalone APK
+    name: Tellegoli 0.11.0 - 15min web discovery and approved 8min queue
     instance_type: mac_mini_m2
     max_build_duration: 90
     environment:
@@ -50,16 +50,17 @@ workflows:
           mkdir -p dist-codemagic
           bash native/scripts/verify-apk.sh "$APK" dist-codemagic normal
           cp "$APK" dist-codemagic/tellegoli.apk
+          # Publish one unambiguous installable APK, not several identical copies.
+          rm -f dist-codemagic/Tellegoli_0.11.0.apk
           (cd dist-codemagic && shasum -a 256 tellegoli.apk > SHA256SUMS.txt)
           git rev-parse HEAD > dist-codemagic/SOURCE-COMMIT.txt
-          printf '%s\n' 'Tellegoli independent debug-signed APK. Live Telegram login and delivery not verified.' \
+          printf '%s\n' 'Tellegoli 0.11.0 debug-signed APK. Live queue delivery not verified on a device.' \
             'The original Electric Connect app can remain installed; Tellegoli uses a separate app ID.' \
-            'For later Tellegoli upgrades keep the signing certificate; back up before reinstalling.' \
+            'Back up Contacts XLSX and Telegram session data before uninstalling; cloud debug certificates may change.' \
             > dist-codemagic/READ-FIRST.txt
     artifacts:
       - dist-codemagic/*.apk
       - dist-codemagic/*.txt
-      - native/app/build/outputs/apk/debug/*.apk
       - native/app/build/reports/tests/**/*
       - native/app/build/test-results/testDebugUnitTest/**/*.xml
       - native/app/build/reports/lint-results-debug.*
