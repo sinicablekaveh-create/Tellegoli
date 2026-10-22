@@ -610,6 +610,7 @@ public final class MainActivity extends Activity {
 
     button("شروع جستجوی مشتریان و گروه‌ها",this::startSalesDiscovery);
     button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
+    button("خروجی کامل Excel: شماره‌ها، گروه‌ها، منابع و وضعیت",this::requestCombinedXlsxExport);
 
     LinearLayout automaticCard=newCard();
     automaticCard.addView(text("جستجوی خودکار وب هر ۱۵ دقیقه",17,true));
@@ -622,6 +623,19 @@ public final class MainActivity extends Activity {
     automaticCard.addView(webToggle);
     automaticCard.addView(text("هر ۱۵ دقیقه یک نوبت وب‌گردی برنامه‌ریزی می‌شود؛ سایت‌های واردشده از Excel هم چرخشی بررسی می‌شوند. وقتی صف پیام فعال باشد، بین ارسال‌های ۸ دقیقه‌ای هم جستجوی وب انجام می‌شود. زمان دقیق در اندروید تضمین نمی‌شود.",12,false));
     card(automaticCard);
+
+    LinearLayout telegramCard=newCard();
+    telegramCard.addView(text("جستجوی خودکار گروه‌های تلگرام",17,true));
+    CheckBox telegramToggle=new CheckBox(this);
+    telegramToggle.setText("در پس‌زمینه حتی وقتی برنامه باز نیست");
+    telegramToggle.setMinHeight(dp(52));
+    telegramToggle.setChecked(TelegramBackgroundSchedule.enabled(this));
+    telegramToggle.setOnCheckedChangeListener((v,enabled)->setBackgroundTelegram(enabled));
+    telegramCard.addView(telegramToggle);
+    telegramCard.addView(text(
+        "با اجازهٔ شما و حساب قبلاً واردشدهٔ TDLib، تقریباً هر ۱۵ دقیقه یک عبارت گروه عمومی بررسی می‌شود؛ اندروید ممکن است آن را به تأخیر بیندازد. جستجو، عضویت یا ارسال به افراد ناشناس انجام نمی‌شود.",
+        12,false));
+    card(telegramCard);
 
     LinearLayout stats=ElectricUi.row(this);
     LinearLayout contactStat=newCard();
@@ -655,10 +669,22 @@ public final class MainActivity extends Activity {
         "فقط پیام‌هایی که خودت تأیید کرده‌ای",this::openScheduledQueue);
 
     LinearLayout statusCard=newCard();
+    statusCard.addView(text("وضعیت چهار بخش",17,true));
+    liveStatus=ElectricUi.text(this,liveSummary(),12,ElectricUi.INK,false);
+    ElectricUi.addBlock(this,statusCard,liveStatus,6);
     statusCard.addView(text("گزارش جستجو",17,true));
     discoveryUi=new DiscoveryUi(this,statusCard,null,true);
     card(statusCard);
     note("جستجوی وب مستقل و خودکار است؛ فقط صف پیام‌های ازقبل‌تأییدشده می‌تواند با فاصلهٔ حداقل ۸ دقیقه ارسال کند.");
+  }
+
+  private void setBackgroundTelegram(boolean enabled) {
+    TelegramBackgroundSchedule.setEnabled(this,enabled);
+    if(enabled && !TdlibEngine.get(this).hasCredentials())
+      toast("زمان‌بندی روشن شد؛ برای جستجوی تلگرام ابتدا در بخش اتصال تلگرام وارد حساب شوید.");
+    else toast(enabled?"جستجوی دوره‌ای گروه‌های عمومی در پس‌زمینه روشن شد؛ اجرای دقیق به اندروید بستگی دارد.":
+        "جستجوی پس‌زمینهٔ تلگرام خاموش شد؛ گروه‌های ذخیره‌شده محفوظ‌اند.");
+    if(liveStatus!=null)liveStatus.setText(liveSummary());
   }
 
   private void setAutomaticDiscovery(boolean enabled) {
@@ -861,6 +887,14 @@ public final class MainActivity extends Activity {
     quickAction("◎","تحقیق تکمیلی اختیاری","تنظیم کلید شخصی Exa؛ برای کشف پایه لازم نیست",this::openExa);
     button("منابع عمومی اختیاری",()->DiscoveryUi.sources(this));
     button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
+    button("خروجی کامل Excel: شماره‌ها، گروه‌ها، منابع و وضعیت",this::requestCombinedXlsxExport);
+    CheckBox telegramBackground=new CheckBox(this);
+    telegramBackground.setText("جستجوی خودکار گروه‌های تلگرام در پس‌زمینه");
+    telegramBackground.setMinHeight(dp(52));
+    telegramBackground.setChecked(TelegramBackgroundSchedule.enabled(this));
+    telegramBackground.setOnCheckedChangeListener((v,on)->setBackgroundTelegram(on));
+    page.addView(telegramBackground);
+    note("مستقل از جستجوی وب است. نیاز به یک‌بار ورود به حساب تلگرام دارد؛ هر بار یک عبارت گروه عمومی بدون ارسال پیام بررسی می‌شود.");
     button("ورود مستقیم کلیدواژه‌ها از Excel",this::requestKeywordImport);
 
     CheckBox automatic=new CheckBox(this);
