@@ -139,6 +139,30 @@ public class IndependentDiscoveryTest {
             store.find("02156519931",0,10).get(0).source);
     }
 
+
+    @Test public void importedExcelWebsitesReceiveHostSlotsDespiteLiveSearchResults()throws Exception {
+        UnifiedExcelImport.Parsed input=new UnifiedExcelImport.Parsed();
+        input.sources.add(new UnifiedExcelImport.WebSource(
+            "https://buyer-imported.example/contact","مجری برق آزمون"));
+        assertEquals(1,UnifiedExcelImport.apply(store,input).sources);
+        DiscoveryCoordinator.Run pass=run();
+        pass.seeds.clear();
+        pass.seeds.add("https://new-search-result.example/");
+        pass.maxHosts=1;pass.maxPages=1;
+        List<String> fetched=new ArrayList<>();
+        new PublicWebsiteContactsProvider((url,hosts)->{
+            fetched.add(url);
+            return page(200,url.endsWith("robots.txt")?"User-agent: *\\nAllow: /":
+                    html("02156519931"),
+                url.endsWith("robots.txt")?"text/plain":"text/html");
+        }).discover(pass);
+        assertEquals(1,pass.saved);
+        assertEquals("https://buyer-imported.example/contact",
+            store.find("02156519931",0,10).get(0).source);
+        for(String url:fetched)assertTrue("User Excel source is selected: "+url,
+            url.startsWith("https://buyer-imported.example/"));
+    }
+
     @Test public void exa403FallsBackToIndependentSourceWithoutRepeatingPaidRequest()throws Exception {
         AtomicInteger exa=new AtomicInteger();
         DiscoveryCoordinator.Run r=run();
