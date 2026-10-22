@@ -58,10 +58,11 @@ final class DiscoveryData {
         List<String> arguments=new ArrayList<>();
         for(String host:hosts){
             if(where.length()>0)where.append(" OR ");
-            where.append("(url LIKE ? ESCAPE '\\\\' OR url LIKE ? ESCAPE '\\\\')");
-            String escaped=host.replace("\\","\\\\").replace("%","\\%").replace("_","\\_");
-            arguments.add("https://"+escaped+"/%");
-            arguments.add("https://"+escaped+"/");
+            // PublicHttp.validate already restricts hosts to DNS names without
+            // LIKE wildcards; avoid a multi-character SQLite ESCAPE literal.
+            where.append("(url LIKE ? OR url=?)");
+            arguments.add("https://"+host+"/%");
+            arguments.add("https://"+host+"/");
         }
         arguments.add(Integer.toString(limit));
         String sql="SELECT url FROM discovery_urls WHERE state IN ('pending','interrupted','retry') AND attempts<3"
