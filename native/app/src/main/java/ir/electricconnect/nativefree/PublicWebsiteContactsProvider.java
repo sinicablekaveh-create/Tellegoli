@@ -161,7 +161,13 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
     }
     private void queueLink(String base,String link,Set<String> hosts,DiscoveryCoordinator.Run run) {
         if(!run.active())return;
-        try {String url=PublicHttp.validate(URI.create(base).resolve(link).toString(),hosts);if(run.data.pending(100).size()<80)run.data.queue(url);}catch(Exception ignored){}
+        try {
+            String url=PublicHttp.validate(URI.create(base).resolve(link).toString(),hosts);
+            // Limit discovered paths per site, not by old pages from OTHER sites.
+            String host=URI.create(url).getHost();
+            if(run.data.pendingForHosts(Collections.singleton(host),80).size()<80)
+                run.data.queue(url);
+        }catch(Exception ignored){}
     }
     private PublicHttp.Page fetch(String url,Set<String> hosts,DiscoveryCoordinator.Run run,RobotsRules rules,int redirects) throws Exception {
         String safe=PublicHttp.validate(url,hosts);
