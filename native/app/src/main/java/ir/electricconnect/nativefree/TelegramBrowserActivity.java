@@ -124,6 +124,19 @@ public final class TelegramBrowserActivity extends Activity
         ElectricUi.addBlock(this,root,chatList,5);
 
         ElectricUi.section(this,root,"۲. گروه‌های عمومی صنعت برق","نتایج ذخیره‌شده پس از بستن برنامه هم باقی می‌مانند؛ عضویت خودکار انجام نمی‌شود.");
+        android.widget.CheckBox backgroundGroups=new android.widget.CheckBox(this);
+        backgroundGroups.setText("جستجوی خودکار گروه‌های عمومی حتی وقتی برنامه بسته است");
+        backgroundGroups.setMinHeight(dp(48));
+        backgroundGroups.setChecked(TelegramBackgroundSchedule.enabled(this));
+        backgroundGroups.setOnCheckedChangeListener((button,enabled)->{
+            TelegramBackgroundSchedule.setEnabled(this,enabled);
+            status.setText(enabled?"جستجوی دوره‌ای در پس‌زمینه ثبت شد؛ اتصال آمادهٔ TDLib لازم است.":
+                "جستجوی گروه‌های تلگرام در پس‌زمینه خاموش شد.");
+        });
+        ElectricUi.addBlock(this,root,backgroundGroups,7);
+        ElectricUi.addBlock(this,root,ElectricUi.text(this,
+            "هر حدود ۱۵ دقیقه یک عبارت عمومی با حساب قبلاً واردشده بررسی می‌شود؛ اندروید ممکن است اجرا را عقب بیندازد. "+
+            TelegramBackgroundSchedule.describe(this),12,ElectricUi.MUTED,false),7);
         ElectricUi.addBlock(this,root,
             ElectricUi.button(this,"شروع جست‌وجوی خودکار چندعبارتی گروه‌ها",()->{
                 if(!engine.isReady()) {
