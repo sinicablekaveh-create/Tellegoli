@@ -54,15 +54,34 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
         // URLs must be checked before the built-in fallback sites, otherwise
         // maxHosts can silently discard every Exa/SearXNG result.
         List<String> sources=new ArrayList<>(run.seeds);
+        // Imported Excel sources rotate; existing in-app sources remain a fallback.
+        sources.addAll(run.data.rotatedImportedSources(run.importedSourceCursor,
+            Math.max(8,run.maxHosts*3)));
         sources.addAll(rotatedSeeds(run.buyerSeedCursor));
+        List<String> safeSources=new ArrayList<>();
         for(String seed:sources) {
-            try {String safe=PublicHttp.validate(seed,null);String host=URI.create(safe).getHost();
-                if(!oldSupplierSeed(host) && (hosts.contains(host)||hosts.size()<run.maxHosts)) {hosts.add(host);run.data.queue(safe);}
+            try {
+                String safe=PublicHttp.validate(seed,null);
+                if(!oldSupplierSeed(URI.create(safe).getHost())) {
+                    safeSources.add(safe);
+                    run.data.queue(safe);
+                }
             }catch(IOException e){run.error("نشانی منبع مجاز نیست؛ فقط وب‌سایت عمومی امن");}
         }
-        // Restore pending same-host contact links without accepting arbitrary persisted destinations.
-        for(String url:run.data.pending(100))if(hosts.size()<run.maxHosts) {
-            try {String safe=PublicHttp.validate(url,null);String host=URI.create(safe).getHost();if(!oldSupplierSeed(host))hosts.add(host);}catch(IOException ignored){}
+        // Choose sites with work remaining. A completed (or denied) default URL
+        // must NOT occupy one of the 4 host slots and starve new Excel sites.
+        for(String safe:safeSources) {
+            if(hosts.size()>=run.maxHosts)break;
+            if(run.data.isPending(safe))hosts.add(URI.create(safe).getHost());
+        }
+        // Restore unfinished contact links, respecting source and SSRF policies.
+        for(String url:run.data.pending(200)) {
+            if(hosts.size()>=run.maxHosts)break;
+            try {
+                String safe=PublicHttp.validate(url,null);
+                String host=URI.create(safe).getHost();
+                if(!oldSupplierSeed(host))hosts.add(host);
+            }catch(IOException ignored){}
         }
         boolean worked=false;Set<String> attempted=new HashSet<>();
         for(int round=0;round<run.maxHosts*run.maxPages+8 && run.active();round++) {
