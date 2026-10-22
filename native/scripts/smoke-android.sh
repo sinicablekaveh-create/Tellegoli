@@ -7,7 +7,7 @@ output="${3:-dist/smoke}"
 : "${ANDROID_HOME:?Set ANDROID_HOME}"
 adb="$ANDROID_HOME/platform-tools/adb"
 aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
-package=ir.electricconnect.tdlibpersonal.sandbox
+package=ir.electricconnect.tellegoli.sandbox
 mkdir -p "$output"
 "$aapt" dump badging "$apk" > "$output/APK-INFO.txt"
 grep -Fq "package: name='$package'" "$output/APK-INFO.txt"
@@ -40,6 +40,6 @@ done
 test "$resumed" = true
 "$adb" shell uiautomator dump /sdcard/telegram-connect-smoke.xml > "$output/UI-DUMP-STATUS.txt"
 "$adb" exec-out cat /sdcard/telegram-connect-smoke.xml > "$output/UI.xml"
-grep -Fq 'چهار ابزار تلگرام کانکت' "$output/UI.xml"
+grep -Fq 'جستجوی خودکار وب هر ۱۵ دقیقه' "$output/UI.xml"
 "$adb" exec-out screencap -p > "$output/ANDROID-HOME.png"
-echo 'PASS: install, JNI, four tools, offline search, unapproved queue rejection, direct XLSX import/export, restart and reinstall persistence.'
+echo 'PASS: install, JNI, simplified automation dashboard, offline search, unapproved queue rejection, direct XLSX import/export, restart and reinstall persistence.'

@@ -36,11 +36,14 @@ public class TelegramConnectSalesDashboardTest {
             .edit().putBoolean("sales_auto_enabled",false).commit();
         try(var controller=Robolectric.buildActivity(MainActivity.class).setup()) {
             View root=controller.get().getWindow().getDecorView();
-            assertNotNull(find(root,"جست‌وجوگر خودکار"));
+            assertNotNull(find(root,"مشتری‌یابی خودکار"));
+            assertNotNull(find(root,"شروع جستجوی مشتریان و گروه‌ها"));
+            assertNotNull(find(root,"جستجوی خودکار وب هر ۱۵ دقیقه"));
+            assertNotNull(find(root,"جستجوی وب ۱۵ دقیقه‌ای + صف ۸ دقیقه‌ای"));
             assertNotNull(find(root,"صف و ارسال به گروه‌ها"));
             assertNotNull(find(root,"مخاطبان و شماره‌های تماس"));
+            assertNotNull(find(root,"گروه‌های تلگرام"));
             assertNotNull(find(root,"خروجی اکسل"));
-            assertNotNull(find(root,"چهار ابزار تلگرام کانکت"));
         }
     }
 
@@ -74,10 +77,27 @@ public class TelegramConnectSalesDashboardTest {
         try(var controller=Robolectric.buildActivity(MainActivity.class).setup()) {
             View root=controller.get().getWindow().getDecorView();
             for(String title:new String[]{
-                "جست‌وجوگر خودکار", "صف و ارسال به گروه‌ها",
+                "گروه‌های تلگرام", "صف و ارسال به گروه‌ها",
                 "مخاطبان و شماره‌های تماس", "خروجی اکسل"
             })assertNotNull(action(root,title));
         }
+    }
+
+
+    @Test public void webDiscoveryDefaultsToFifteenMinutesAndQueueGapIsEightMinutes() {
+        Context app=RuntimeEnvironment.getApplication();
+        android.content.SharedPreferences settings=app.getSharedPreferences("discovery",Context.MODE_PRIVATE);
+        app.getSharedPreferences("queue_gap_discovery",Context.MODE_PRIVATE)
+            .edit().putBoolean("enabled",true).commit();
+        settings.edit().putBoolean("periodic_15_minutes",true).putBoolean("periodic",true).commit();
+        assertEquals(15,DiscoverySchedule.intervalMinutes(app));
+        assertEquals(8L*60*1000,ScheduledQueue.MIN_GAP);
+        assertTrue(QueueGapDiscovery.webSearchAllowed(app));
+        settings.edit().putBoolean("periodic",false).commit();
+        assertFalse(QueueGapDiscovery.webSearchAllowed(app));
+        settings.edit().putBoolean("periodic",true).putBoolean("periodic_15_minutes",false).commit();
+        assertEquals(1440,DiscoverySchedule.intervalMinutes(app));
+        settings.edit().putBoolean("periodic_15_minutes",true).putBoolean("periodic",false).commit();
     }
 
     @Test public void automaticQueriesTargetBuyersNotOurCableTrayProduct() {

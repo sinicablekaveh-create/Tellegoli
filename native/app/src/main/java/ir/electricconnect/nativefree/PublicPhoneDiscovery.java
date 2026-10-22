@@ -36,6 +36,22 @@ final class PublicPhoneDiscovery {
         +"تماس\\s*با\\s*ما|واحد\\s*فروش|دفتر\\s*مرکزی|واحد\\s*بازرگانی|"
         +"پشتیبانی|سفارش(?:ات)?|contact|telephone|phone|tel\\s*[:.]|sales\\s*office)",
         Pattern.CASE_INSENSITIVE|Pattern.UNICODE_CASE);
+    // A business page may list telephone and fax numbers side by side.
+    // An earlier "phone" heading must never authorize the later fax value.
+    private static final Pattern FAX_LABEL=Pattern.compile(
+        "(?:فکس|فاکس|فاكس|دورنگار|fax|facsimile)",
+        Pattern.CASE_INSENSITIVE|Pattern.UNICODE_CASE);
+    static boolean hasDialableContactLabel(String beforeNumber) {
+        Matcher contact=BUSINESS_CONTACT_LABEL.matcher(beforeNumber);
+        int lastContact=-1;
+        while(contact.find())lastContact=contact.start();
+        if(lastContact<0)return false;
+        Matcher fax=FAX_LABEL.matcher(beforeNumber);
+        int lastFax=-1;
+        while(fax.find())lastFax=fax.start();
+        return lastFax<lastContact;
+    }
+
     private static final Pattern BUSINESS_TITLE=Pattern.compile(
         "(?:شرکت|تولید|کارخانه|صنایع|صنعت|فروش|برق|کابل|تجهیزات|سینی|"
         +"تابلو|لوازم|پیمانکار|فروشگاه|تامین|تأمین|الکتریک|مهندسی|"
@@ -131,7 +147,7 @@ final class PublicPhoneDiscovery {
                 while(active.getAsBoolean()&&phones.find()){
                     int start=Math.max(0,phones.start()-110);
                     String around=body.substring(start,phones.start());
-                    if(!BUSINESS_CONTACT_LABEL.matcher(around).find())continue;
+                    if(!hasDialableContactLabel(around))continue;
                     String phone=normalizeIranPhone(phones.group());
                     if(phone==null)continue;
                     valid++;

@@ -26,8 +26,10 @@ public final class DiscoveryWorker extends Worker {
             preferences.edit().putBoolean("telegram_pending",true).apply();
             return Result.success();
         }
+        // This 15-minute periodic worker searches PUBLIC WEB ONLY, never TDLib.
+        // Telegram group discovery belongs to the READY, foreground flow.
         DiscoveryCoordinator coordinator=DiscoveryCoordinator.get(app);
-        if(!coordinator.start(selected,true))return Result.success();
+        if(!coordinator.start(0,true))return Result.success();
         try {
             while(coordinator.isRunning()&&!isStopped())Thread.sleep(200);
             if(isStopped()) {coordinator.stop();return Result.success();}

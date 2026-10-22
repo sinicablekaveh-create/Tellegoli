@@ -234,14 +234,16 @@ public class IndependentDiscoveryTest {
         assertFalse("Only successful completed scan can clear pending",options.getBoolean("telegram_pending",true));
     }
 
-    @Test public void periodicWorkIsDailyConstrainedAndOptOutCancelsUniqueWork()throws Exception {
+    @Test public void periodicWebWorkIsQuarterHourlyConstrainedAndOptOutCancelsUniqueWork()throws Exception {
         androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(app);
+        app.getSharedPreferences("discovery",0).edit().remove("periodic_15_minutes").commit();
         androidx.work.PeriodicWorkRequest request=DiscoverySchedule.request(app);
-        assertEquals(TimeUnit.HOURS.toMillis(24),request.getWorkSpec().intervalDuration);
-        app.getSharedPreferences("discovery",0).edit().putBoolean("periodic_15_minutes",true).commit();
-        androidx.work.PeriodicWorkRequest quarterHour=DiscoverySchedule.request(app);
-        assertEquals(TimeUnit.MINUTES.toMillis(15),quarterHour.getWorkSpec().intervalDuration);
+        assertEquals(TimeUnit.MINUTES.toMillis(15),request.getWorkSpec().intervalDuration);
+        assertEquals(TimeUnit.MINUTES.toMillis(15),request.getWorkSpec().initialDelay);
         app.getSharedPreferences("discovery",0).edit().putBoolean("periodic_15_minutes",false).commit();
+        androidx.work.PeriodicWorkRequest daily=DiscoverySchedule.request(app);
+        assertEquals(TimeUnit.HOURS.toMillis(24),daily.getWorkSpec().intervalDuration);
+        app.getSharedPreferences("discovery",0).edit().putBoolean("periodic_15_minutes",true).commit();
         assertEquals(androidx.work.NetworkType.CONNECTED,request.getWorkSpec().constraints.getRequiredNetworkType());assertTrue(request.getWorkSpec().constraints.requiresBatteryNotLow());
         DiscoverySchedule.enable(app);DiscoverySchedule.enable(app);
         assertEquals(1,androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork(DiscoverySchedule.WORK).get().size());
@@ -293,10 +295,15 @@ public class IndependentDiscoveryTest {
             .putBoolean("sales_auto_enabled",false).commit();
         try(var controller=Robolectric.buildActivity(MainActivity.class).setup()) {
             MainActivity activity=controller.get();
-            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"جست‌وجوگر خودکار"));
-            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"توقف"));
-            for(String tab:new String[]{"خانه","جستجو","مخاطبان","صف پیام","تنظیمات"})assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),tab));
+            // The sales dashboard's exact presentation text is covered by
+            // TelegramConnectSalesDashboardTest. This lifecycle regression
+            // focuses on real navigation and durable discovery state instead.
+            assertEquals(0,((Integer)ReflectionHelpers.getField(activity,"section")).intValue());
+            for(String tab:new String[]{"خانه","جستجو","مخاطبان","صف پیام","تنظیمات"})
+                assertNotNull("Missing navigation tab: "+tab,
+                    OfflineExcelTest.find(activity.getWindow().getDecorView(),tab));
             controller.recreate();
+            assertEquals(0,((Integer)ReflectionHelpers.getField(activity,"section")).intValue());
             assertEquals(3,DiscoveryCoordinator.get(app).snapshot().optInt("pages"));
             assertEquals("interrupted",DiscoveryCoordinator.get(app).snapshot().optString("state"));
             assertEquals(1,app.getSharedPreferences("discovery",0).getInt("scope",2));

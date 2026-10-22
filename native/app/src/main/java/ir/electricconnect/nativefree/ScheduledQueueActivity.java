@@ -67,7 +67,7 @@ public final class ScheduledQueueActivity extends Activity implements TdlibEngin
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         ElectricUi.styleWindow(this);
-        setTitle("Electric Connect | صف زمان‌بندی‌شده");
+        setTitle("تلگولی | صف زمان‌بندی‌شده");
         engine = TdlibEngine.get(this);
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -128,14 +128,14 @@ public final class ScheduledQueueActivity extends Activity implements TdlibEngin
 
         ElectricUi.section(this,root,"۳. مدیریت صف","شروع فقط با تأیید مستقل شما انجام می‌شود");
         CheckBox gapDiscovery=new CheckBox(this);
-        gapDiscovery.setText("کاوش خودکار در فاصلهٔ ۸ دقیقه‌ای پیام‌ها: شماره‌های عمومی شرکت‌های برق و گروه‌های عمومی تلگرام");
+        gapDiscovery.setText("جستجوی بیشترِ وب بین دو ارسال تأییدشده");
         gapDiscovery.setTextDirection(View.TEXT_DIRECTION_RTL);
         gapDiscovery.setMinHeight(dp(48));
         gapDiscovery.setChecked(QueueGapDiscovery.enabled(this));
         gapDiscovery.setOnCheckedChangeListener((v,on)->QueueGapDiscovery.setEnabled(this,on));
         ElectricUi.addBlock(this,root,gapDiscovery,8);
         ElectricUi.addBlock(this,root,text(
-            "مخاطبان در پایگاه محلی ذخیره می‌شوند؛ گروه‌های عمومی فقط هنگام باز بودن برنامه و آماده بودن حساب تلگرام جست‌وجو می‌شوند. هیچ گروه کشف‌شده‌ای خودکار وارد صف ارسال نمی‌شود.",
+            "پس از هر تلاش ارسال، یک نوبت جستجوی محدود وب در فاصلهٔ حداقل ۸ دقیقه‌ای آغاز می‌شود؛ زمان اجرای پس‌زمینه دقیق نیست. جستجوی وب هر ۱۵ دقیقه هم مستقل ادامه دارد. گروه‌های تلگرام فقط با حساب آماده و برنامهٔ باز بررسی می‌شوند. هیچ گیرندهٔ جدیدی بدون تأیید به صف اضافه نمی‌شود.",
             13,false),8);
         discoveryStatus=text("",13,false);
         ElectricUi.addBlock(this,root,discoveryStatus,8);
