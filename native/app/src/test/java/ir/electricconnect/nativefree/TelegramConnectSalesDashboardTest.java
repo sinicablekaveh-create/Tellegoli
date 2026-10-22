@@ -87,6 +87,8 @@ public class TelegramConnectSalesDashboardTest {
     @Test public void webDiscoveryDefaultsToFifteenMinutesAndQueueGapIsEightMinutes() {
         Context app=RuntimeEnvironment.getApplication();
         android.content.SharedPreferences settings=app.getSharedPreferences("discovery",Context.MODE_PRIVATE);
+        app.getSharedPreferences("queue_gap_discovery",Context.MODE_PRIVATE)
+            .edit().putBoolean("enabled",true).commit();
         settings.edit().putBoolean("periodic_15_minutes",true).putBoolean("periodic",true).commit();
         assertEquals(15,DiscoverySchedule.intervalMinutes(app));
         assertEquals(8L*60*1000,ScheduledQueue.MIN_GAP);
