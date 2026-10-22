@@ -48,6 +48,30 @@ final class DiscoveryData {
         }
         return out;
     }
+    /** Read only work belonging to chosen, validated hostnames; older hosts
+     * cannot bury newly imported Excel sources after 100+ pending URLs. */
+    List<String> pendingForHosts(java.util.Set<String> hosts,int limit) {
+        List<String> out=new ArrayList<>();
+        if(hosts==null || hosts.isEmpty() || limit<=0)return out;
+        // Host matching uses URL prefixes and excludes a hostname suffix trick.
+        StringBuilder where=new StringBuilder();
+        List<String> arguments=new ArrayList<>();
+        for(String host:hosts){
+            if(where.length()>0)where.append(" OR ");
+            where.append("(url LIKE ? ESCAPE '\\\\' OR url LIKE ? ESCAPE '\\\\')");
+            String escaped=host.replace("\\","\\\\").replace("%","\\%").replace("_","\\_");
+            arguments.add("https://"+escaped+"/%");
+            arguments.add("https://"+escaped+"/");
+        }
+        arguments.add(Integer.toString(limit));
+        String sql="SELECT url FROM discovery_urls WHERE state IN ('pending','interrupted','retry') AND attempts<3"
+            +" AND ("+where+") ORDER BY attempts,updated,url LIMIT ?";
+        try(Cursor c=store.getReadableDatabase().rawQuery(sql,arguments.toArray(new String[0]))) {
+            while(c.moveToNext())out.add(c.getString(0));
+        }
+        return out;
+    }
+
     void finishUrl(String url,String state) {
         store.getWritableDatabase().execSQL("UPDATE discovery_urls SET state=?,attempts=attempts+1,updated=? WHERE url=?",new Object[]{state,System.currentTimeMillis(),url});
     }
