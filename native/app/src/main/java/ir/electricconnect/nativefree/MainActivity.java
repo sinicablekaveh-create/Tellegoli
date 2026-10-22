@@ -655,35 +655,23 @@ public final class MainActivity extends Activity {
     }
   }
 
+
   private void searchPage() {
-    LinearLayout intro=ElectricUi.hero(this);
-    intro.addView(ElectricUi.text(this,"جست‌وجوی دوگانه",22,Color.WHITE,true));
-    intro.addView(ElectricUi.text(this,
-        "اطلاعات ثبت‌شده همیشه آفلاین است. کشف عمومی در خانه بدون کلید پولی انجام می‌شود.",
-        13,Color.rgb(228,246,245),false));
-    card(intro);
-    button("کشف خودکار از منابع عمومی",this::startSalesDiscovery);
-    button("ورودی یکجای اکسل: مخاطبان، شماره‌ها، گروه‌ها و کلیدواژه‌ها",this::requestUnifiedImport);
-    keywordPanel();
-    quickAction("◈","جست‌وجوی تلگرام","همهٔ چت‌ها، پیام‌ها و کشف گروه‌های عمومی",this::openTelegramBrowser);
-    line("جست‌وجوی محلی");
-    note("نام، دسته‌بندی، شماره یا منبع را بنویس. نتایج اینترنتی ساختگی نمایش داده نمی‌شود.");
+    ElectricUi.section(this,page,"جستجو و نتیجه‌ها", "شماره‌های ذخیره‌شده همین‌جا جستجو می‌شوند.");
     EditText query=input("عبارت جست‌وجو، عنوان، شماره یا منبع");
-    query.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(250)});
-    button("جست‌وجو در اطلاعات ذخیره‌شده",()->showRecords(query.getText().toString(),false));
-    line("دسته‌بندی‌های آماده");
-    LinearLayout options=newCard();
-    for(String profile:profiles) {
-      Button chip=ElectricUi.button(this,profile,()->{
-        query.setText(profile);showRecords(profile,false);
-      },true,false);
-      ElectricUi.addBlock(this,options,chip,7);
-    }
-    card(options);
-    line("نتایج ذخیره‌شده");
+    query.setFilters(new android.text.InputFilter[]{
+        new android.text.InputFilter.LengthFilter(250)});
+    button("جست‌وجو در اطلاعات ذخیره‌شده",
+        ()->showRecords(query.getText().toString(),false));
     recordResults=vertical();
     page.addView(recordResults);
     showRecords("",false);
+    line("یافتن موارد تازه");
+    button("شروع جستجوی مشتریان و گروه‌ها",this::startSalesDiscovery);
+    quickAction("◈","گروه‌های تلگرام",
+        "جستجوی گروه‌های عمومی و مرور حساب",this::openTelegramBrowser);
+    button("ورودی یکجای اکسل",this::requestUnifiedImport);
+    note("کشف فقط از منابع عمومی انجام می‌شود؛ نتایج بدون منبع معتبر وارد بانک نمی‌شوند. هیچ پیامی خودکار ارسال نمی‌شود.");
   }
 
   private void contactsPage(){
@@ -762,12 +750,20 @@ public final class MainActivity extends Activity {
     for(Record record:records){
       LinearLayout item=newCard();
       item.addView(ElectricUi.text(this,"◈ "+record.title,16,ElectricUi.INK,true));
-      item.addView(ElectricUi.text(this,
-            (record.category.isEmpty()?"بدون دسته‌بندی":record.category)+
-            (record.phone.isEmpty()?"":"  •  "+record.phone)+
-            (record.source.isEmpty()?"":"\nمنبع: "+record.source),
-            13,ElectricUi.MUTED,false));
-      item.addView(ElectricUi.text(this,"نوع منبع: "+record.provider+" | دریافت: "+formatTime(record.retrieved),12,ElectricUi.MUTED,false));
+      TextView number=ElectricUi.text(this,record.phone.isEmpty()?"شماره ثبت نشده":
+          record.phone,18,ElectricUi.TEAL,true);
+      number.setTextIsSelectable(true);
+      ElectricUi.addBlock(this,item,number,3);
+      TextView details=ElectricUi.text(this,
+          "دسته‌بندی: "+record.category+"\nمنبع: "+record.source+
+          "\nنوع منبع: "+record.provider+" | دریافت: "+formatTime(record.retrieved),
+          12,ElectricUi.MUTED,false);
+      details.setVisibility(View.GONE);
+      Button detailsToggle=ElectricUi.button(this,"مشاهده منبع و جزئیات",()->{
+          details.setVisibility(details.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);
+      },true,false);
+      ElectricUi.addBlock(this,item,detailsToggle,5);
+      ElectricUi.addBlock(this,item,details,3);
       if(allowDelete)ElectricUi.addBlock(this,item,
             ElectricUi.button(this,"حذف «"+record.title+"»",()->
               new AlertDialog.Builder(this).setMessage("این مورد حذف شود؟")
