@@ -51,7 +51,7 @@ public class StoreTest {
             old.execSQL("INSERT INTO drafts VALUES(1,'گروه','پیش‌نویس','DRAFT',1)");old.setVersion(2);
         }
         try(MainActivity.Store upgraded=new MainActivity.Store(context)) {
-            assertEquals(2,upgraded.count("records"));assertEquals(1,upgraded.count("drafts"));assertEquals(4,upgraded.getReadableDatabase().getVersion());
+            assertEquals(2,upgraded.count("records"));assertEquals(1,upgraded.count("drafts"));assertEquals(5,upgraded.getReadableDatabase().getVersion());
             assertEquals("Migrated v2 database must contain the new Excel group table",0,new DiscoveryData(upgraded).importedGroupCount());
             assertEquals("یادداشت اصلی",upgraded.find("قبلی",0,10).get(1).source);
             assertFalse(upgraded.insertPublicBusinessPhone("جدید","+98 21 56519931","https://cable.example/contact"));assertEquals(2,upgraded.count("records"));
