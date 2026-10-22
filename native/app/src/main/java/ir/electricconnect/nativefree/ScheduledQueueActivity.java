@@ -67,7 +67,7 @@ public final class ScheduledQueueActivity extends Activity implements TdlibEngin
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         ElectricUi.styleWindow(this);
-        setTitle("Electric Connect | صف زمان‌بندی‌شده");
+        setTitle("تلگولی | صف زمان‌بندی‌شده");
         engine = TdlibEngine.get(this);
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
