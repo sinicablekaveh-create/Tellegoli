@@ -129,8 +129,10 @@ final class ScheduledQueue {
             if (nextPending(context) == null) return false;
             if (!prefs(context).edit().putBoolean(KEY_ENABLED, true).commit()) return false;
         }
+        // First dispatch the explicitly approved message; the bounded web
+        // discovery pass is requested after the attempt, during the 8-minute gap.
+        // Independent 15-minute public-web discovery runs on its own schedule.
         schedule(context, ExistingWorkPolicy.REPLACE);
-        QueueGapDiscovery.scheduleWeb(context);
         return true;
     }
 
