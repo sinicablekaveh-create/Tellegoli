@@ -19,7 +19,15 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
         "https://fidarmandegar.ir/projects/",
         "https://www.falatco.com/fa/contact",
         "https://saha.co.ir/",
-        "https://powertechno.ir/پیمانکاری-برق-صنعتی/"
+        "https://powertechno.ir/پیمانکاری-برق-صنعتی/",
+        // Additional verified public project executors / electrical EPC contacts.
+        // Rotated across runs; no new site is silently added as a message recipient.
+        "https://asiaindustrialgateway.ir/en/contact-us/",
+        "https://diacotec.com/",
+        "https://nicsaco.com/",
+        "https://damoontech.com/service/electrical-contractor/",
+        "https://ghadergostaran.com/",
+        "https://sanyar-co.com/"
     );
     /** Change the first websites between runs so a four-host cap does not starve later buyers. */
     static List<String> rotatedSeeds(int start) {
