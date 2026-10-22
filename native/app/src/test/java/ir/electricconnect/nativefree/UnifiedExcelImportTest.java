@@ -109,12 +109,18 @@ public class UnifiedExcelImportTest {
         assertEquals(2,raw.sources.size());
         assertEquals(0,raw.buyers.size());
         byte[] report=workbook(new String[][]{
-            {"نوع داده","عنوان","شماره / شناسه / آدرس"},
-            {"منبع وب","شرکت مجری","https://buyer-03.example/contact"}
+            {"نوع داده","عنوان","شماره / شناسه / آدرس","منبع"},
+            {"منبع وب","شرکت مجری","https://buyer-03.example/contact","ورودی اکسل"}
         });
         UnifiedExcelImport.Parsed fromReport=UnifiedExcelImport.read(new ByteArrayInputStream(report));
         assertEquals(1,fromReport.sources.size());
         assertEquals("https://buyer-03.example/contact",fromReport.sources.get(0).url);
+        byte[] common=workbook(new String[][]{
+            {"منبع"},
+            {"https://buyer-04.example/"},
+            {"https://buyer-05.example/projects/"}
+        });
+        assertEquals(2,UnifiedExcelImport.read(new ByteArrayInputStream(common)).sources.size());
     }
 
     @Test public void excelSourceBackupRestoreKeepsPreviouslySavedNumbers()throws Exception {
