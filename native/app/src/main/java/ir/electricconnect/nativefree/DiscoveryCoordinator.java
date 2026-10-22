@@ -45,7 +45,7 @@ final class DiscoveryCoordinator {
         run.queuePass=scope==3;
         run.telegramBackground=background && scope==1;
         JSONObject previous=snapshot();
-        if(previous.optInt("scope",-1)==scope && (previous.optString("state").equals("interrupted")||previous.optString("state").equals("stopped")||previous.optString("state").equals("waiting"))) {
+        if(!run.telegramBackground && previous.optInt("scope",-1)==scope && (previous.optString("state").equals("interrupted")||previous.optString("state").equals("stopped")||previous.optString("state").equals("waiting"))) {
             run.pages=previous.optInt("pages");run.saved=previous.optInt("saved");run.groups=previous.optInt("groups");run.duplicates=previous.optInt("duplicates");run.errors=previous.optInt("errors");
         }
         running=run;
