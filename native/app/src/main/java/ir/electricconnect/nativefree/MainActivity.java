@@ -614,7 +614,7 @@ public final class MainActivity extends Activity {
         String.valueOf(store.count("records")),27,ElectricUi.TEAL,true));
     contactStat.addView(text("شمارهٔ تجاری ذخیره‌شده",12,false));
     LinearLayout groupStat=newCard();
-    long groupCount=new DiscoveryData(store).savedGroupCount();
+    long groupCount=new DiscoveryData(store).total("public_groups");
     groupStat.addView(ElectricUi.text(this,String.valueOf(groupCount),27,ElectricUi.TEAL,true));
     groupStat.addView(text("گروه عمومی ذخیره‌شده",12,false));
     stats.addView(contactStat,new LinearLayout.LayoutParams(0,-2,1f));
