@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit;
 
 final class DiscoverySchedule {
     static final String WORK="tellegoli-public-web-discovery";
+    static final String LEGACY_WORK="electric-public-discovery-daily";
     static final int WEB_INTERVAL_MINUTES=15;
     /**
      * Tellegoli web discovery every 15 minutes by default
@@ -29,7 +30,9 @@ final class DiscoverySchedule {
         }
         if(settings.getBoolean("periodic",false)) {
             try {
-                WorkManager.getInstance(app).enqueueUniquePeriodicWork(
+                WorkManager manager=WorkManager.getInstance(app);
+                manager.cancelUniqueWork(LEGACY_WORK);
+                manager.enqueueUniquePeriodicWork(
                     WORK,ExistingPeriodicWorkPolicy.KEEP,request(app));
             } catch(IllegalStateException ignored) {
                 // WorkManager may not yet be available during test bootstrap;
@@ -52,7 +55,9 @@ final class DiscoverySchedule {
     }
     static void enable(Context app) {
         app.getSharedPreferences("discovery",Context.MODE_PRIVATE).edit().putBoolean("periodic",true).apply();
-        WorkManager.getInstance(app).enqueueUniquePeriodicWork(WORK,ExistingPeriodicWorkPolicy.UPDATE,request(app));
+        WorkManager manager=WorkManager.getInstance(app);
+        manager.cancelUniqueWork(LEGACY_WORK);
+        manager.enqueueUniquePeriodicWork(WORK,ExistingPeriodicWorkPolicy.UPDATE,request(app));
     }
     static void setFifteenMinutes(Context app,boolean enabled) {
         app.getSharedPreferences("discovery",Context.MODE_PRIVATE).edit().putBoolean("periodic_15_minutes",enabled).apply();
@@ -60,6 +65,6 @@ final class DiscoverySchedule {
     }
     static void disable(Context app) {
         app.getSharedPreferences("discovery",Context.MODE_PRIVATE).edit().putBoolean("periodic",false).putBoolean("telegram_pending",false).apply();
-        try {WorkManager.getInstance(app).cancelUniqueWork(WORK);}catch(IllegalStateException ignored) { /* Before WorkManager initialization the disabled preference still gates the worker. */ }
+        try {WorkManager manager=WorkManager.getInstance(app);manager.cancelUniqueWork(WORK);manager.cancelUniqueWork(LEGACY_WORK);}catch(IllegalStateException ignored) { /* Before WorkManager initialization the disabled preference still gates the worker. */ }
     }
 }
