@@ -886,7 +886,7 @@ public final class MainActivity extends Activity {
     }
   }
   static final class Store extends SQLiteOpenHelper {
-    Store(Context context) {super(context, "electric_connect_native_free.db", null, 4);}
+    Store(Context context) {super(context, "electric_connect_native_free.db", null, 5);}
     @Override public void onCreate(SQLiteDatabase db) {
       db.execSQL("CREATE TABLE records (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', search_text TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, UNIQUE(title, phone))");
       db.execSQL("CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT, destination TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'DRAFT', created INTEGER NOT NULL)");
@@ -910,6 +910,7 @@ public final class MainActivity extends Activity {
       }
       if(oldVersion<3) {addDiscoveryColumns(db);DiscoveryData.create(db);}
       if(oldVersion<4) DiscoveryData.create(db);
+      if(oldVersion<5) DiscoveryData.create(db);
     }
     private static void addDiscoveryColumns(SQLiteDatabase db) {
       db.execSQL("ALTER TABLE records ADD COLUMN provider TEXT NOT NULL DEFAULT 'قدیمی / دستی'");
