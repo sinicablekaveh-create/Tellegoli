@@ -61,7 +61,7 @@ final class TelegramBackgroundSchedule {
         String state=p.getString("state","scheduled");
         String label=state.equals("ready")?"آخرین جستجو انجام شد":
             state.equals("running")?"در حال جستجوی گروه‌های عمومی":
-            state.equals("account")?"نیازمند ورود دوباره به حساب تلگرام":
+            state.equals("account")?"حساب یا اتصال TDLib آماده نیست؛ تنظیمات تلگرام را بررسی کنید":
             state.equals("busy")?"نوبت قبلی با جستجوی دیگر هم‌زمان شد":
             state.equals("throttled")?"در انتظار پایان محدودیت موقت تلگرام":
             state.equals("cooldown")?"این عبارت به‌تازگی بررسی شده؛ در نوبت بعدی عبارت دیگری انتخاب می‌شود":
