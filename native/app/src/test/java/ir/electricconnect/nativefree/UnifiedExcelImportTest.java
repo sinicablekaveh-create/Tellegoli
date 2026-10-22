@@ -150,6 +150,27 @@ public class UnifiedExcelImportTest {
         }
     }
 
+
+    @Test public void eightImportedSitesRotateWithoutSkippingHalfOfSources()throws Exception {
+        var context=RuntimeEnvironment.getApplication();
+        context.deleteDatabase("electric_connect_native_free.db");
+        try(MainActivity.Store store=new MainActivity.Store(context)) {
+            UnifiedExcelImport.Parsed parsed=new UnifiedExcelImport.Parsed();
+            for(int i=0;i<8;i++)
+                parsed.sources.add(new UnifiedExcelImport.WebSource(
+                    "https://imported-"+i+".example/","پیمانکار "+i));
+            assertEquals(8,UnifiedExcelImport.apply(store,parsed).sources);
+            DiscoveryData data=new DiscoveryData(store);
+            Set<String> covered=new HashSet<>();
+            int cursor=0;
+            for(int run=0;run<4;run++) {
+                covered.addAll(data.rotatedImportedSources(cursor,2));
+                cursor=(cursor+DiscoveryCoordinator.importedCursorStep(4))%8;
+            }
+            assertEquals("Every imported URL must get a scan slot",8,covered.size());
+        }
+    }
+
     @Test public void rejectsUnknownFileBeforeDatabaseWrite()throws Exception{
         try{
             UnifiedExcelImport.read(new ByteArrayInputStream("not an excel file".getBytes("UTF-8")));
