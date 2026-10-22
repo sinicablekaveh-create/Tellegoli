@@ -85,7 +85,7 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
         }
         boolean worked=false;Set<String> attempted=new HashSet<>();
         for(int round=0;round<run.maxHosts*run.maxPages+8 && run.active();round++) {
-            List<String> pending=run.data.pending(100);String url=null;
+            List<String> pending=run.data.pendingForHosts(hosts,100);String url=null;
             for(String candidate:pending) {
                 String host=URI.create(candidate).getHost();
                 if(hosts.contains(host) && !attempted.contains(candidate) && pages.getOrDefault(host,0)<run.maxPages) {url=candidate;break;}
