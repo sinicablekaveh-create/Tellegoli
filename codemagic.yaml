@@ -4,7 +4,7 @@
 # Do not embed personal Telegram/Exa secrets in the public repository.
 workflows:
   electric-connect-0102-android:
-    name: Tellegoli 0.11.1 - Excel public sources and fair 15min discovery
+    name: Tellegoli 0.12.0 - 4 modules, background Telegram, Excel status
     instance_type: mac_mini_m2
     max_build_duration: 90
     environment:
@@ -33,7 +33,7 @@ workflows:
           echo "Using Android SDK manager: $SDKMANAGER"
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null || true
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-35" "build-tools;35.0.0"
-      - name: Test, lint and build standalone Tellegoli APK
+      - name: Test four modules, lint and build one standalone Tellegoli APK
         script: |
           set -euo pipefail
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
@@ -51,10 +51,10 @@ workflows:
           bash native/scripts/verify-apk.sh "$APK" dist-codemagic normal
           cp "$APK" dist-codemagic/tellegoli.apk
           # Publish one unambiguous installable APK, not several identical copies.
-          rm -f dist-codemagic/Tellegoli_0.11.1.apk
+          rm -f dist-codemagic/Tellegoli_0.12.0.apk
           (cd dist-codemagic && shasum -a 256 tellegoli.apk > SHA256SUMS.txt)
           git rev-parse HEAD > dist-codemagic/SOURCE-COMMIT.txt
-          printf '%s\n' 'Tellegoli 0.11.1 debug-signed APK. Live queue delivery not verified on a device.' \
+          printf '%s\n' 'Tellegoli 0.12.0 debug-signed APK. Background WorkManager timing and Telegram login must be verified on device.' \
             'The original Electric Connect app can remain installed; Tellegoli uses a separate app ID.' \
             'Back up Contacts XLSX and Telegram session data before uninstalling; cloud debug certificates may change.' \
             > dist-codemagic/READ-FIRST.txt
