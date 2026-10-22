@@ -78,6 +78,46 @@ public class IndependentDiscoveryTest {
         for(String url:requested)assertTrue(url,url.startsWith("https://freshbuyer.example/"));
     }
 
+
+    @Test public void completedDefaultSiteNeverConsumesNewExcelSiteHostSlot()throws Exception {
+        DiscoveryCoordinator.Run r=run();
+        r.seeds.clear();
+        r.maxHosts=1;
+        r.maxPages=1;
+        String done="https://finished-buyer.example/";
+        String fresh="https://fresh-from-excel.example/";
+        r.seeds.add(done);
+        r.seeds.add(fresh);
+        assertTrue(data.queue(done));
+        data.finishUrl(done,"done");
+        List<String> calls=new ArrayList<>();
+        new PublicWebsiteContactsProvider((url,hosts)->{
+            calls.add(url);
+            return page(200,url.endsWith("robots.txt")?"User-agent: *\\nAllow: /":
+                html("02156519931"),url.endsWith("robots.txt")?"text/plain":"text/html");
+        }).discover(r);
+        assertEquals(1,r.saved);
+        assertEquals(1,r.pages);
+        assertFalse(calls.isEmpty());
+        for(String url:calls)assertTrue("Must scan fresh buyer, not completed seed: "+url,
+            url.startsWith(fresh));
+    }
+
+    @Test public void selectedExcelHostCanScanPastAnOldHundredUrlBacklog()throws Exception {
+        for(int i=0;i<140;i++)assertTrue(data.queue(
+            "https://previous"+i+".example/contact"));
+        String fresh="https://fresh-excel.example/";
+        DiscoveryCoordinator.Run r=run();
+        r.seeds.clear();r.seeds.add(fresh);r.maxHosts=1;r.maxPages=1;
+        new PublicWebsiteContactsProvider((url,hosts)->page(200,
+            url.endsWith("robots.txt")?"User-agent: *\\nAllow: /":html("02156519931"),
+            url.endsWith("robots.txt")?"text/plain":"text/html")).discover(r);
+        assertEquals(1,r.saved);
+        assertEquals(fresh,store.find("02156519931",0,10).get(0).source);
+        assertEquals(1,r.pages);
+        assertEquals(141,data.total("discovery_urls"));
+    }
+
     @Test public void exa403FallsBackToIndependentSourceWithoutRepeatingPaidRequest()throws Exception {
         AtomicInteger exa=new AtomicInteger();
         DiscoveryCoordinator.Run r=run();
