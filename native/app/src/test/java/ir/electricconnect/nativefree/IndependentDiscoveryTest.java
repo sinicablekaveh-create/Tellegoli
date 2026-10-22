@@ -312,6 +312,95 @@ public class IndependentDiscoveryTest {
         assertFalse(app.getSharedPreferences("discovery",0).getBoolean("periodic",true));
         assertEquals(androidx.work.WorkInfo.State.CANCELLED,androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork(DiscoverySchedule.WORK).get().get(0).getState());
     }
+
+    @Test public void telegramBackgroundScheduleIsOptInIndependentOfWebAndPersistent()throws Exception {
+        app.getSharedPreferences(TelegramBackgroundSchedule.PREF,0).edit().clear().commit();
+        assertFalse(TelegramBackgroundSchedule.enabled(app));
+        androidx.work.PeriodicWorkRequest periodic=TelegramBackgroundSchedule.request();
+        assertEquals(TimeUnit.MINUTES.toMillis(15),periodic.getWorkSpec().intervalDuration);
+        assertEquals(TimeUnit.MINUTES.toMillis(15),periodic.getWorkSpec().initialDelay);
+        assertEquals(androidx.work.NetworkType.CONNECTED,
+            periodic.getWorkSpec().constraints.getRequiredNetworkType());
+        assertTrue(periodic.getWorkSpec().constraints.requiresBatteryNotLow());
+        androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(app);
+        app.getSharedPreferences("discovery",0).edit().putBoolean("periodic",false).commit();
+        TelegramBackgroundSchedule.setEnabled(app,true);
+        TelegramBackgroundSchedule.bootstrap(app);
+        assertTrue(TelegramBackgroundSchedule.enabled(app));
+        assertEquals(1,androidx.work.WorkManager.getInstance(app)
+            .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK).get().size());
+        assertFalse("Telegram background opt-in must not force on public web",
+            app.getSharedPreferences("discovery",0).getBoolean("periodic",true));
+        TelegramBackgroundSchedule.setEnabled(app,false);
+        assertFalse(TelegramBackgroundSchedule.enabled(app));
+        assertEquals(androidx.work.WorkInfo.State.CANCELLED,
+            androidx.work.WorkManager.getInstance(app)
+                .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK)
+                .get().get(0).getState());
+        assertFalse("Background Telegram must never run without opt-in",
+            DiscoveryCoordinator.get(app).start(1,true));
+    }
+
+    @Test public void backgroundTelegramSearchesExactlyOnePublicTermAndDoesNotSendMessages()throws Exception {
+        TdlibEngine engine=new TdlibEngine(app);
+        ReflectionHelpers.setField(engine,"loggedIn",true);
+        AtomicInteger searches=new AtomicInteger();
+        AtomicInteger groupDetails=new AtomicInteger();
+        TdlibEngine.Session session=(function,handler)->{
+            if(function instanceof org.drinkless.tdlib.TdApi.SearchPublicChats) {
+                searches.incrementAndGet();
+                org.drinkless.tdlib.TdApi.Chats chats=new org.drinkless.tdlib.TdApi.Chats();
+                chats.chatIds=new long[]{9001};
+                handler.onResult(chats);
+            } else if(function instanceof org.drinkless.tdlib.TdApi.GetChat) {
+                groupDetails.incrementAndGet();
+                org.drinkless.tdlib.TdApi.Chat chat=new org.drinkless.tdlib.TdApi.Chat();
+                chat.id=9001;chat.title="گروه پیمانکاران برق صنعتی";
+                chat.type=new org.drinkless.tdlib.TdApi.ChatTypeBasicGroup();
+                handler.onResult(chat);
+            } else fail("Background search must never send, join or read members: "+
+                function.getClass().getSimpleName());
+        };
+        ReflectionHelpers.setField(engine,"client",session);
+        DiscoveryCoordinator.Run pass=run();
+        pass.scope=1;pass.background=true;pass.telegramBackground=true;
+        ExecutorService worker=Executors.newSingleThreadExecutor();
+        Future<?> job=worker.submit(()->DiscoveryCoordinator.execute(pass,
+            Collections.singletonList(new TelegramPublicGroupProvider(engine))));
+        try {
+            long deadline=System.currentTimeMillis()+9000;
+            while(!job.isDone()&&System.currentTimeMillis()<deadline) {
+                shadowOf(Looper.getMainLooper()).idle();Thread.sleep(20);
+            }
+            job.get(1,TimeUnit.SECONDS);
+            assertEquals("One background search must use just one query",1,searches.get());
+            assertEquals(1,groupDetails.get());
+            assertEquals(1,pass.groups);
+            assertEquals("finished",pass.state);
+            assertEquals(1,data.groups().size());
+            assertEquals(1,data.get("background_telegram_topic_cycle").optInt("next"));
+            assertFalse("Background discovery cannot request foreground login",pass.telegramPending);
+        } finally {pass.cancelled.set(true);worker.shutdownNow();}
+    }
+
+    @Test public void backgroundTelegramSkipsRecentlyCompletedTopicAndAdvancesCursor()throws Exception {
+        String topic=GroupKeywords.all(data).get(0);
+        data.put("telegram:"+topic,new JSONObject().put("success",System.currentTimeMillis()));
+        TdlibEngine engine=new TdlibEngine(app);
+        ReflectionHelpers.setField(engine,"loggedIn",true);
+        ReflectionHelpers.setField(engine,"client",(TdlibEngine.Session)(function,handler)->
+            fail("Freshly checked topic must not trigger Telegram request"));
+        DiscoveryCoordinator.Run pass=run();
+        pass.scope=1;pass.background=true;pass.telegramBackground=true;
+        DiscoveryCoordinator.execute(pass,Collections.singletonList(
+            new TelegramPublicGroupProvider(engine)));
+        assertEquals("finished",pass.state);
+        assertEquals(0,pass.topic);
+        assertEquals(0,pass.groups);
+        assertEquals(1,data.get("background_telegram_topic_cycle").optInt("next"));
+        assertFalse(pass.telegramPending);
+    }
+
     @Test public void telegramProviderUsesOfficialSearchDeduplicatesPersistsAndCancels()throws Exception {
         TdlibEngine engine=new TdlibEngine(app);AtomicInteger searches=new AtomicInteger();
         ReflectionHelpers.setField(engine,"loggedIn",true);
