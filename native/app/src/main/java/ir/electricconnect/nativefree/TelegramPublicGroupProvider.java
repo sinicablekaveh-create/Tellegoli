@@ -16,8 +16,12 @@ final class TelegramPublicGroupProvider implements DiscoveryProvider {
     @Override public String name(){return "گروه‌های عمومی تلگرام";}
     @Override public void discover(DiscoveryCoordinator.Run run)throws Exception {
         if(!engine.isReady()) {
-            if(!run.telegramBackground)run.telegramPending=true;
-            run.note="حساب تلگرام آماده نیست؛ برای جستجوی پس‌زمینه قبلاً در برنامه وارد شوید.";
+            if(run.telegramBackground)
+                run.note="حساب تلگرام آماده نیست؛ برای جستجوی پس‌زمینه قبلاً در برنامه وارد شوید.";
+            else {
+                run.telegramPending=true;
+                run.note="برای گروه‌ها حساب تلگرام را متصل کنید، سپس شروع را بزنید.";
+            }
             return;
         }
         // The queue mode rotates through one industry keyword each quiet interval.
