@@ -356,6 +356,22 @@ public final class MainActivity extends Activity {
           "سایت عمومی مشتری‌یابی","ورودی اکسل","","",formatTime(Long.parseLong(site[2])),
           "","در جستجوی دوره‌ای استفاده می‌شود",""});
     }
+    android.content.SharedPreferences web=getSharedPreferences("discovery",MODE_PRIVATE);
+    android.content.SharedPreferences telegram=TelegramBackgroundSchedule.prefs(this);
+    rows.add(new String[]{"وضعیت برنامه","جستجوی وب ۱۵ دقیقه‌ای",
+        web.getBoolean("periodic",false)?"فعال":"خاموش","موتور وب عمومی",
+        "WorkManager","","",formatTime(web.getLong("last_attempt",0)),
+        "","آخرین شماره‌های جدید: "+web.getInt("last_new",0),""});
+    rows.add(new String[]{"وضعیت برنامه","جستجوی گروه‌های تلگرام در پس‌زمینه",
+        TelegramBackgroundSchedule.enabled(this)?"فعال":"خاموش","TDLib عمومی",
+        "حساب شخصیِ ازقبل‌واردشده","","",formatTime(telegram.getLong("last_attempt",0)),
+        "",TelegramBackgroundSchedule.describe(this),""});
+    rows.add(new String[]{"وضعیت برنامه","جستجوی شماره‌های تماس",
+        Long.toString(store.count("records")),"شماره‌های تجاری ذخیره‌شده",
+        "SQLite محلی","","","","","شمارهٔ اعضای تلگرام استخراج نمی‌شود",""});
+    rows.add(new String[]{"وضعیت برنامه","صف پیام‌های تأییدشده",
+        ScheduledQueue.enabled(this)?"فعال":"متوقف","حداقل فاصله ۸ دقیقه",
+        "TDLib","","","","","فقط پیام‌های انتخاب‌شده؛ وضعیت هر پیام در ردیف‌های گزارش صف",""});
     try(Cursor pages=store.getReadableDatabase().rawQuery(
         "SELECT url,state,attempts,updated FROM discovery_urls ORDER BY updated DESC",null)) {
       while(pages.moveToNext())rows.add(new String[]{"نتیجه وب","صفحه عمومی",
@@ -437,20 +453,25 @@ public final class MainActivity extends Activity {
       }
     }
     JSONObject run=DiscoveryCoordinator.get(this).snapshot();
-    return "شماره‌های تجاری ذخیره‌شده: "+store.count("records")+
-        "  | گروه‌های عمومی ذخیره‌شده: "+publicGroups+
-        "  | گروه‌های واردشده: "+new DiscoveryData(store).importedGroupCount()+
-        "\nگروه‌های فعلی حساب TDLib: "+TdlibEngine.get(this).snapshotJoinedGroups().size()+
-        "  | صفحات وب بررسی‌شده: "+donePages+
-        "\nصف: منتظر "+waiting+" | در حال ارسال "+sending+
-        " | پذیرفته‌شده بدون تأیید "+submitted+
-        "\nتأیید ارسال تلگرام: "+confirmed+" | ناموفق: "+failed+
-        " | نامشخص: "+unknown+
-        "\nآخرین کاوش: "+formatTime(run.optLong("updated",0))+
-        " | شماره جدید این اجرا: "+run.optInt("saved")+
-        " | گروه جدید: "+run.optInt("groups")+
-        " | خطا: "+run.optInt("errors")+
-        "\nآمار هر ۵ ثانیه هنگام باز بودن صفحه از داده‌های واقعی تازه می‌شود.";
+    android.content.SharedPreferences web=getSharedPreferences("discovery",MODE_PRIVATE);
+    String webMode=web.getBoolean("periodic",false)?"فعال، برنامه‌ریزی تقریبی ۱۵ دقیقه":"خاموش";
+    return "۱. جستجوی وب: "+webMode+
+        " | آخرین تلاش: "+formatTime(web.getLong("last_attempt",0))+
+        "\n   سایت‌های واردشده: "+new DiscoveryData(store).importedSourceCount()+
+        " | صفحات بررسی‌شده: "+donePages+
+        "\n۲. جستجوی گروه‌های عمومی تلگرام در پس‌زمینه: "+
+            TelegramBackgroundSchedule.describe(this)+
+        "\n   گروه‌های کشف‌شده: "+publicGroups+
+        " | گروه‌های اکسل: "+new DiscoveryData(store).importedGroupCount()+
+        "\n۳. جستجوی شماره تماس شرکت‌ها: "+store.count("records")+" شماره ذخیره‌شده"+
+        " | شمارهٔ جدید در آخرین کاوش: "+run.optInt("saved")+
+        "\n۴. صف پیام‌های تأییدشده: "+(ScheduledQueue.enabled(this)?"فعال":"متوقف")+
+        " | منتظر: "+waiting+" | در حال ارسال: "+sending+
+        "\n   پذیرفته‌شده: "+submitted+" | تأییدشده: "+confirmed+
+        " | ناموفق: "+failed+" | نامشخص: "+unknown+
+        "\nآخرین اجرای موتور کاوش: "+formatTime(run.optLong("updated",0))+
+        " | خطاها: "+run.optInt("errors")+
+        "\nوضعیت‌ها از بانک خود گوشی خوانده و هنگام بازبودن صفحه هر ۵ ثانیه تازه می‌شوند.";
   }
 
   /** Explicit on-device synchronisation; never starts or resumes the message sender. */
