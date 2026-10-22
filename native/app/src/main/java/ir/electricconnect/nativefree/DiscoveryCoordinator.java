@@ -38,10 +38,12 @@ final class DiscoveryCoordinator {
     boolean isRunning(){return running!=null;}
     synchronized boolean start(int scope,boolean background) {
         if(running!=null)return false;
+        if(background && scope==1 && !TelegramBackgroundSchedule.enabled(app))return false;
         Run run=new Run(data,new AtomicBoolean(),null);
         run.topics=LeadKeywords.all(data);
         run.scope=scope;run.background=background;
         run.queuePass=scope==3;
+        run.telegramBackground=background && scope==1;
         JSONObject previous=snapshot();
         if(previous.optInt("scope",-1)==scope && (previous.optString("state").equals("interrupted")||previous.optString("state").equals("stopped")||previous.optString("state").equals("waiting"))) {
             run.pages=previous.optInt("pages");run.saved=previous.optInt("saved");run.groups=previous.optInt("groups");run.duplicates=previous.optInt("duplicates");run.errors=previous.optInt("errors");
@@ -49,7 +51,8 @@ final class DiscoveryCoordinator {
         running=run;
         // Record the request before a web provider can consume the time budget.
         // READY resumption must also survive web timeouts and process interruption.
-        if(scope==1||scope==2)app.getSharedPreferences("discovery",Context.MODE_PRIVATE)
+        if((scope==1||scope==2) && !run.telegramBackground)
+            app.getSharedPreferences("discovery",Context.MODE_PRIVATE)
             .edit().putBoolean("telegram_pending",true).apply();
         run.changed=()->publish(run);
         executor.execute(()->{
@@ -88,7 +91,11 @@ final class DiscoveryCoordinator {
                     providers.add(new PublicWebsiteContactsProvider(http::get));
                 }
                 if(scope!=0) {
-                    if(background) {
+                    if(run.telegramBackground) {
+                        // Only after explicit opt-in + saved READY TDLib session.
+                        // One public group keyword per scheduled pass.
+                        providers.add(new TelegramPublicGroupProvider(TdlibEngine.get(app)));
+                    } else if(background) {
                         settings.edit().putBoolean("telegram_pending",true).apply();
                         run.note="وب دوره‌ای اجرا شد؛ بخش تلگرام در ورود بعدی به حساب آماده اجرا می‌شود.";
                     } else providers.add(new TelegramPublicGroupProvider(TdlibEngine.get(app)));
@@ -145,6 +152,7 @@ final class DiscoveryCoordinator {
     }
     void stopForeground(){Run run=running;if(run!=null&&!run.background)stop();}
     void stopQueuePass(){Run run=running;if(run!=null&&run.queuePass)stop();}
+    void stopBackgroundTelegram(){Run run=running;if(run!=null&&run.telegramBackground)stop();}
     private void publish(Run run) {
         JSONObject value=run.json();data.put("run",value);
         main.post(()->{synchronized(this){for(Listener l:new ArrayList<>(listeners))l.changed(value);}});
@@ -166,7 +174,7 @@ final class DiscoveryCoordinator {
         List<String> topics=Arrays.asList(TOPICS);
         PublicHttp http;Runnable changed;
         int pages,saved,groups,duplicates,errors,topic,total,scope,maxPages=4,maxHosts=4,buyerSeedCursor,importedSourceCursor;
-        boolean background,telegramPending,queuePass,telegramCompleted,interrupted;
+        boolean background,telegramPending,queuePass,telegramBackground,telegramCompleted,interrupted;
         String state="running",current="",note="";
         Run(DiscoveryData data,AtomicBoolean cancelled,Runnable changed){this.data=data;this.cancelled=cancelled;this.changed=changed;}
         boolean active(){return !cancelled.get()&&!Thread.currentThread().isInterrupted()&&System.currentTimeMillis()<deadline;}
