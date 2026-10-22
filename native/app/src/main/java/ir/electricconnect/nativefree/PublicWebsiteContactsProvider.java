@@ -53,10 +53,10 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
         // Search providers run before this website importer: their discovered
         // URLs must be checked before the built-in fallback sites, otherwise
         // maxHosts can silently discard every Exa/SearXNG result.
+        List<String> imported=run.data.rotatedImportedSources(run.importedSourceCursor,
+            Math.max(8,run.maxHosts*3));
         List<String> sources=new ArrayList<>(run.seeds);
-        // Imported Excel sources rotate; existing in-app sources remain a fallback.
-        sources.addAll(run.data.rotatedImportedSources(run.importedSourceCursor,
-            Math.max(8,run.maxHosts*3)));
+        sources.addAll(imported);
         sources.addAll(rotatedSeeds(run.buyerSeedCursor));
         List<String> safeSources=new ArrayList<>();
         for(String seed:sources) {
@@ -67,6 +67,17 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
                     run.data.queue(safe);
                 }
             }catch(IOException e){run.error("نشانی منبع مجاز نیست؛ فقط وب‌سایت عمومی امن");}
+        }
+        // Reserve a fair share of this bounded pass for EXCEL sources so
+        // continually refreshed optional search hits cannot starve user imports.
+        int importedShare=Math.max(1,run.maxHosts/2);
+        for(String url:imported) {
+            if(hosts.size()>=importedShare)break;
+            try {
+                String safe=PublicHttp.validate(url,null);
+                String host=URI.create(safe).getHost();
+                if(!oldSupplierSeed(host) && run.data.isPending(safe))hosts.add(host);
+            }catch(IOException ignored){}
         }
         // Choose sites with work remaining. A completed (or denied) default URL
         // must NOT occupy one of the 4 host slots and starve new Excel sites.
