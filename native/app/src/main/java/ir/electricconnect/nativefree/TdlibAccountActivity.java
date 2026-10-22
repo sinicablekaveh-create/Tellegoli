@@ -44,7 +44,7 @@ public final class TdlibAccountActivity extends Activity implements TdlibEngine.
     @Override public void onCreate(Bundle savedInstance) {
         super.onCreate(savedInstance);
         ElectricUi.styleWindow(this);
-        setTitle("Electric Connect | Telegram TDLib");
+        setTitle("تلگولی | Telegram TDLib");
         engine=TdlibEngine.get(this);
         ScrollView scroll=new ScrollView(this);
         LinearLayout root=new LinearLayout(this);
