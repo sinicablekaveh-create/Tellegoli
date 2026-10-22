@@ -206,12 +206,17 @@ public final class MainActivity extends Activity {
     super.onActivityResult(requestCode,resultCode,data);
     if(requestCode==REQUEST_IMPORT_ALL && resultCode==RESULT_OK && data!=null && data.getData()!=null) {
       Uri file=data.getData();
-      toast("در حال خواندن اکسل مخاطبان، شماره‌ها و گروه‌ها...");
+      toast("در حال خواندن منابع وب، مخاطبان و گروه‌ها از اکسل...");
       contactExecutor.execute(()->{
         try(java.io.InputStream in=getContentResolver().openInputStream(file)){
           UnifiedExcelImport.Parsed parsed=UnifiedExcelImport.read(in);
           UnifiedExcelImport.Report imported=UnifiedExcelImport.apply(store,parsed);
-          runOnUiThread(()->{if(!isDestroyed()){toast(imported.describe());draw(0);}});
+          runOnUiThread(()->{if(!isDestroyed()){
+            toast(imported.describe());
+            if(imported.sources>0 && getSharedPreferences("discovery",MODE_PRIVATE)
+                .getBoolean("periodic",false))DiscoveryCoordinator.get(this).start(0,false);
+            draw(0);
+          }});
         }catch(Exception error){
           runOnUiThread(()->{if(!isDestroyed())toast("ورود اکسل انجام نشد: "+error.getMessage()+"؛ اطلاعات قبلی محفوظ است.");});
         }
@@ -561,6 +566,8 @@ public final class MainActivity extends Activity {
     line("کلیدواژه‌های مشتری‌یابی از Excel");
     note("فایل XLSX را مستقیم انتخاب کنید: ستون «کلیدواژه» یا ستون اول، هر ردیف یک عبارت؛ حداکثر ۵۰ عبارت. متن پیمانکار، مجری و پروژه وارد کنید. عبارت‌های محصول و تولیدکننده پذیرفته نمی‌شوند.");
     button("ورود مستقیم کلیدواژه‌ها از Excel",this::requestKeywordImport);
+    button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
+    note("تعداد منابع واردشده: "+new DiscoveryData(store).importedSourceCount()+" | فایل XLSX با ستون «آدرس سایت» یا URL.");
     List<String> imported=LeadKeywords.imported(new DiscoveryData(store));
     note(imported.isEmpty()?"۱۰ موضوع آمادهٔ خریداران فعال است؛ کلیدواژه‌های اکسل به آن‌ها اضافه می‌شوند.":
         "کلیدواژه‌های واردشده (در جست‌وجوی بعدی فعال):\n"+android.text.TextUtils.join("، ",imported));
@@ -595,6 +602,7 @@ public final class MainActivity extends Activity {
     card(hero);
 
     button("شروع جستجوی مشتریان و گروه‌ها",this::startSalesDiscovery);
+    button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
 
     LinearLayout automaticCard=newCard();
     automaticCard.addView(text("جستجوی خودکار وب هر ۱۵ دقیقه",17,true));
@@ -605,7 +613,7 @@ public final class MainActivity extends Activity {
         .getBoolean("periodic",true));
     webToggle.setOnCheckedChangeListener((v,enabled)->setAutomaticDiscovery(enabled));
     automaticCard.addView(webToggle);
-    automaticCard.addView(text("هر ۱۵ دقیقه یک نوبت وب‌گردی برنامه‌ریزی می‌شود. وقتی صف پیام فعال باشد، بین ارسال‌های ۸ دقیقه‌ای هم جستجوی وب انجام می‌شود. زمان دقیق در اندروید تضمین نمی‌شود.",12,false));
+    automaticCard.addView(text("هر ۱۵ دقیقه یک نوبت وب‌گردی برنامه‌ریزی می‌شود؛ سایت‌های واردشده از Excel هم چرخشی بررسی می‌شوند. وقتی صف پیام فعال باشد، بین ارسال‌های ۸ دقیقه‌ای هم جستجوی وب انجام می‌شود. زمان دقیق در اندروید تضمین نمی‌شود.",12,false));
     card(automaticCard);
 
     LinearLayout stats=ElectricUi.row(this);
@@ -623,6 +631,7 @@ public final class MainActivity extends Activity {
     stats.addView(groupStat,groupWidth);
     ElectricUi.addBlock(this,page,stats,12);
 
+    note("منابع وب واردشده با اکسل: "+new DiscoveryData(store).importedSourceCount()+" سایت");
     ElectricUi.section(this,page,"جستجوی وب ۱۵ دقیقه‌ای + صف ۸ دقیقه‌ای",null);
     int waitingMessages=0;
     for(JSONObject item:ScheduledQueue.snapshot(getApplicationContext()))
@@ -678,6 +687,8 @@ public final class MainActivity extends Activity {
     quickAction("◈","گروه‌های تلگرام",
         "جستجوی گروه‌های عمومی و مرور حساب",this::openTelegramBrowser);
     button("ورودی یکجای اکسل",this::requestUnifiedImport);
+    button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
+    note("برای منابع وب: ستون «آدرس سایت» یا URL و در صورت تمایل «نام شرکت». هر ردیف یک نشانی عمومی https:// بدون رمز، لینک تلگرام یا پارامتر. منابع در جستجوی خودکار اضافه می‌شوند.");
     note("کشف فقط از منابع عمومی انجام می‌شود؛ نتایج بدون منبع معتبر وارد بانک نمی‌شوند. هیچ پیامی خودکار ارسال نمی‌شود.");
   }
 
@@ -993,7 +1004,7 @@ public final class MainActivity extends Activity {
     void deleteDraft(long id) {getWritableDatabase().delete("drafts","id=?",new String[]{Long.toString(id)});}
     void clearAll() {
       SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
-      try {db.delete("records",null,null);db.delete("drafts",null,null);db.delete("public_groups",null,null);db.delete("imported_groups",null,null);db.delete("discovery_urls",null,null);db.delete("discovery_state",null,null);db.setTransactionSuccessful();}
+      try {db.delete("records",null,null);db.delete("drafts",null,null);db.delete("public_groups",null,null);db.delete("imported_groups",null,null);db.delete("imported_web_sources",null,null);db.delete("discovery_urls",null,null);db.delete("discovery_state",null,null);db.setTransactionSuccessful();}
       finally {db.endTransaction();}
     }
   }
