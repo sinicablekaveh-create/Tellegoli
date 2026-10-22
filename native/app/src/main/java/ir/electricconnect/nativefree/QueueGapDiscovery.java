@@ -36,8 +36,16 @@ final class QueueGapDiscovery {
         else if(ScheduledQueue.enabled(context)) scheduleWeb(context);
     }
 
+    // The public-web switch controls both periodic discovery and the extra
+    // bounded searches during approved-message gaps. Disabling web search does
+    // not stop the independently approved message queue.
+    static boolean webSearchAllowed(Context context) {
+        return enabled(context) && context.getSharedPreferences("discovery",Context.MODE_PRIVATE)
+            .getBoolean("periodic",false);
+    }
+
     static void scheduleWeb(Context context){
-        if(!enabled(context) || !ScheduledQueue.enabled(context))return;
+        if(!webSearchAllowed(context) || !ScheduledQueue.enabled(context))return;
         OneTimeWorkRequest work=new OneTimeWorkRequest.Builder(WebWorker.class)
             .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED)
                 .setRequiresBatteryNotLow(true).build()).build();
@@ -71,13 +79,13 @@ final class QueueGapDiscovery {
 
         @NonNull @Override public Result doWork(){
             Context app=getApplicationContext();
-            if(!enabled(app) || !ScheduledQueue.enabled(app))return Result.success();
+            if(!webSearchAllowed(app) || !ScheduledQueue.enabled(app))return Result.success();
             DiscoveryCoordinator coordinator=DiscoveryCoordinator.get(app);
             // If an interactive search already runs, do not interrupt or replace it.
             if(!coordinator.start(0,true))return Result.success();
             try {
                 while(coordinator.isRunning()){
-                    if(isStopped() || !enabled(app) || !ScheduledQueue.enabled(app)){
+                    if(isStopped() || !webSearchAllowed(app) || !ScheduledQueue.enabled(app)){
                         coordinator.stop();break;
                     }
                     Thread.sleep(250);
