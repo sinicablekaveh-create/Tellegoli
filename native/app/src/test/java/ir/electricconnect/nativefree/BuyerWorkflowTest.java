@@ -190,7 +190,7 @@ public class BuyerWorkflowTest {
         try(var controller=Robolectric.buildActivity(MainActivity.class).setup()){
             MainActivity activity=controller.get();
             OfflineExcelTest.find(activity.getWindow().getDecorView(),"جستجو").performClick();
-            OfflineExcelTest.find(activity.getWindow().getDecorView(),"ورود مستقیم کلیدواژه‌ها از Excel").performClick();
+            OfflineExcelTest.find(activity.getWindow().getDecorView(),"ورودی یکجای اکسل").performClick();
             android.content.Intent intent=shadowOf(activity).getNextStartedActivityForResult().intent;
             assertEquals(android.content.Intent.ACTION_OPEN_DOCUMENT,intent.getAction());
             assertEquals(ExcelWorkbook.MIME,intent.getType());
@@ -201,12 +201,12 @@ public class BuyerWorkflowTest {
         try(var controller=Robolectric.buildActivity(MainActivity.class).setup()){
             MainActivity activity=controller.get();
             OfflineExcelTest.find(activity.getWindow().getDecorView(),"جستجو").performClick();
-            OfflineExcelTest.find(activity.getWindow().getDecorView(),"کشف خودکار از منابع عمومی").performClick();
+            OfflineExcelTest.find(activity.getWindow().getDecorView(),"شروع جستجوی مشتریان و گروه‌ها").performClick();
             DiscoveryCoordinator coordinator=DiscoveryCoordinator.get(app);
             assertEquals(2,app.getSharedPreferences("discovery",0).getInt("scope",-1));
             assertTrue("The button must start discovery",coordinator.isRunning());
             // Staying on the search screen lets users import keywords and inspect local results.
-            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"ورود مستقیم کلیدواژه‌ها از Excel"));
+            assertNotNull(OfflineExcelTest.find(activity.getWindow().getDecorView(),"ورودی یکجای اکسل"));
             coordinator.stop();
         }
     }
