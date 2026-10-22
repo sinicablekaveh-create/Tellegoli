@@ -185,7 +185,8 @@ final class UnifiedExcelImport {
         boolean sourceRow=type.contains("منبع وب")||type.contains("منبع جستجو")
             ||type.contains("سایت")||type.contains("وب سایت")
             ||(!site.isEmpty() && contactNumber.isEmpty() && !type.contains("گروه")
-                && !type.contains("مخاطب") && !type.contains("نتیجه وب"));
+                && !type.contains("مخاطب") && !type.contains("نتیجه وب")
+                && !type.contains("گزارش صف"));
         if(sourceRow){
             if(site.isEmpty()||!site.startsWith("https://")){
                 String generic=field(heads,row,"شماره / شناسه / آدرس","شماره/شناسه/آدرس");
