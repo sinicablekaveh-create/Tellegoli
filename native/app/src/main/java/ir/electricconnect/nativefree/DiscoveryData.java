@@ -16,6 +16,7 @@ final class DiscoveryData {
         db.execSQL("CREATE TABLE IF NOT EXISTS discovery_urls (url TEXT PRIMARY KEY, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL)");
         db.execSQL("CREATE TABLE IF NOT EXISTS public_groups (id TEXT PRIMARY KEY, title TEXT NOT NULL, source TEXT NOT NULL, found INTEGER NOT NULL, seen INTEGER NOT NULL)");
         db.execSQL("CREATE TABLE IF NOT EXISTS imported_groups (lookup_key TEXT PRIMARY KEY, title TEXT NOT NULL, chat_id TEXT NOT NULL DEFAULT '', public_link TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', added INTEGER NOT NULL)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS imported_web_sources (url TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', added INTEGER NOT NULL)");
     }
     synchronized void put(String name,JSONObject value) {
         ContentValues v=new ContentValues();v.put("name",name);v.put("value",value.toString());
@@ -65,6 +66,41 @@ final class DiscoveryData {
         }
         return out;
     }
+
+    /** User-imported public business sites are sources, never messaging recipients. */
+    static final int MAX_IMPORTED_SOURCES=2000;
+    long importedSourceCount() {
+        try(Cursor c=store.getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM imported_web_sources",null)) {
+            return c.moveToFirst()?c.getLong(0):0;
+        }
+    }
+    /** Cyclic batches keep thousands of Excel sites discoverable without starving later entries. */
+    List<String> rotatedImportedSources(int cursor,int limit) {
+        int total=(int)importedSourceCount();
+        if(total==0||limit<=0)return new ArrayList<>();
+        int start=Math.floorMod(cursor,total);
+        int needed=Math.min(total,limit);
+        List<String> out=new ArrayList<>();
+        for(int pass=0;pass<2 && out.size()<needed;pass++) {
+            int offset=pass==0?start:0;
+            try(Cursor c=store.getReadableDatabase().rawQuery(
+                    "SELECT url FROM imported_web_sources ORDER BY added,url LIMIT ? OFFSET ?",
+                    new String[]{Integer.toString(needed-out.size()),Integer.toString(offset)})) {
+                while(c.moveToNext())out.add(c.getString(0));
+            }
+        }
+        return out;
+    }
+    /** Returns whether a URL needs processing; already completed/denied pages don't consume a host slot. */
+    boolean isPending(String url) {
+        try(Cursor c=store.getReadableDatabase().rawQuery(
+                "SELECT 1 FROM discovery_urls WHERE url=? AND state IN ('pending','interrupted','retry') AND attempts<3",
+                new String[]{url})) {
+            return c.moveToFirst();
+        }
+    }
+
     /** All checked or pending public website URLs, including source status. */
     List<String[]> webExport() {
         List<String[]> out=new ArrayList<>();
