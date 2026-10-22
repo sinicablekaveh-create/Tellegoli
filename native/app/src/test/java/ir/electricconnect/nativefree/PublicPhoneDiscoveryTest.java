@@ -87,4 +87,28 @@ public final class PublicPhoneDiscoveryTest {
         assertEquals("09121234567",PublicPhoneDiscovery.normalizeIranPhone("+98 (912) 1234567"));
         assertEquals("02156519931",PublicPhoneDiscovery.normalizeIranPhone("۰۲۱۵۶۵۱۹۹۳۱"));
     }
+    @Test public void faxNumbersOnPublicBuyerPagesAreNotSavedAsTelephoneContacts() throws Exception {
+        // Live public FALAT company page distinguishes two actual phone lines
+        // from two fax lines, even though all four have the same valid area code.
+        String contactPage="دفتر مرکزی تلفن: 021 5488 2000 "
+            +"فکس: 021 8828 5356 "
+            +"کارخانه تلفن: 021 5687 1167 "
+            +"فکس: 021 5687 1147";
+        JSONArray rows=new JSONArray().put(business(
+            "شرکت فلات صنعت ایده — Contact",
+            "https://www.falatco.com/fa/contact",contactPage));
+        try(MainActivity.Store db=new MainActivity.Store(ctx)){
+            PublicPhoneDiscovery.Summary summary=PublicPhoneDiscovery.save(db,rows,null);
+            assertEquals(2,summary.saved);
+            assertEquals(2,db.count("records"));
+            assertEquals(1,db.find("02154882000",0,10).size());
+            assertEquals(1,db.find("02156871167",0,10).size());
+            assertEquals(0,db.find("02188285356",0,10).size());
+            assertEquals(0,db.find("02156871147",0,10).size());
+        }
+        assertTrue(PublicPhoneDiscovery.hasDialableContactLabel("Fax: 02112345678 Phone: "));
+        assertFalse(PublicPhoneDiscovery.hasDialableContactLabel("Phone: 02112345678 Fax: "));
+        assertFalse(PublicPhoneDiscovery.hasDialableContactLabel("فکس: "));
+    }
+
 }
