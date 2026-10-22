@@ -187,7 +187,10 @@ final class UnifiedExcelImport {
             ||(!site.isEmpty() && contactNumber.isEmpty() && !type.contains("گروه")
                 && !type.contains("مخاطب") && !type.contains("نتیجه وب"));
         if(sourceRow){
-            if(site.isEmpty())site=field(heads,row,"شماره / شناسه / آدرس","شماره/شناسه/آدرس");
+            if(site.isEmpty()||!site.startsWith("https://")){
+                String generic=field(heads,row,"شماره / شناسه / آدرس","شماره/شناسه/آدرس");
+                if(!generic.isEmpty())site=generic;
+            }
             try{
                 String safe=PublicHttp.validate(site.trim(),null);
                 String label=field(heads,row,"نام شرکت","نام کسب و کار","نام کسب‌وکار","عنوان","نام");
