@@ -110,10 +110,12 @@ public class UnifiedExcelImportTest {
         assertEquals(0,raw.buyers.size());
         byte[] report=workbook(new String[][]{
             {"نوع داده","عنوان","شماره / شناسه / آدرس","منبع"},
-            {"منبع وب","شرکت مجری","https://buyer-03.example/contact","ورودی اکسل"}
+            {"منبع وب","شرکت مجری","https://buyer-03.example/contact","ورودی اکسل"},
+            {"گزارش صف","صف ارسال","0001","TDLib"}
         });
         UnifiedExcelImport.Parsed fromReport=UnifiedExcelImport.read(new ByteArrayInputStream(report));
         assertEquals(1,fromReport.sources.size());
+        assertEquals(0,fromReport.rejected);
         assertEquals("https://buyer-03.example/contact",fromReport.sources.get(0).url);
         byte[] common=workbook(new String[][]{
             {"منبع"},
