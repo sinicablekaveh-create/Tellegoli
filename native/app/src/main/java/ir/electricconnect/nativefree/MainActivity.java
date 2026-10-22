@@ -860,6 +860,7 @@ public final class MainActivity extends Activity {
     card(info);
     quickAction("◎","تحقیق تکمیلی اختیاری","تنظیم کلید شخصی Exa؛ برای کشف پایه لازم نیست",this::openExa);
     button("منابع عمومی اختیاری",()->DiscoveryUi.sources(this));
+    button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
     button("ورود مستقیم کلیدواژه‌ها از Excel",this::requestKeywordImport);
 
     CheckBox automatic=new CheckBox(this);
