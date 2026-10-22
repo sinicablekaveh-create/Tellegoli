@@ -72,7 +72,7 @@ public final class TelegramBrowserActivity extends Activity
     @Override public void onCreate(Bundle savedInstance) {
         super.onCreate(savedInstance);
         ElectricUi.styleWindow(this);
-        setTitle("Electric Connect | جست‌وجوی همهٔ چت‌ها");
+        setTitle("تلگولی | جست‌وجوی همهٔ چت‌ها");
         engine=TdlibEngine.get(this);
         discoveryData=new DiscoveryData(new MainActivity.Store(getApplicationContext()));
         ScrollView scroller=new ScrollView(this);
