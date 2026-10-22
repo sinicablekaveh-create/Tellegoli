@@ -63,6 +63,8 @@ final class TelegramBackgroundSchedule {
             state.equals("running")?"در حال جستجوی گروه‌های عمومی":
             state.equals("account")?"نیازمند ورود دوباره به حساب تلگرام":
             state.equals("busy")?"نوبت قبلی با جستجوی دیگر هم‌زمان شد":
+            state.equals("throttled")?"در انتظار پایان محدودیت موقت تلگرام":
+            state.equals("cooldown")?"این عبارت به‌تازگی بررسی شده؛ در نوبت بعدی عبارت دیگری انتخاب می‌شود":
             state.equals("error")?"جستجوی اخیر ناموفق بود؛ محدودیت یا اتصال را بررسی کنید":
             "برنامه‌ریزی شده — منتظر نوبت اندروید";
         long last=p.getLong("last_attempt",0);
@@ -87,6 +89,12 @@ final class TelegramBackgroundSchedule {
             if(!enabled(app)||isStopped())return Result.success();
             prefs(app).edit().putLong("last_attempt",System.currentTimeMillis())
                 .putString("state","running").apply();
+            long retryUntil=app.getSharedPreferences("tdlib_controls",Context.MODE_PRIVATE)
+                .getLong("retry_until",0);
+            if(System.currentTimeMillis()<retryUntil) {
+                status(app,"throttled","—",0);
+                return Result.success();
+            }
             TdlibEngine engine=TdlibEngine.get(app);
             if(!engine.hasCredentials()) {
                 status(app,"account","—",0);
@@ -118,8 +126,10 @@ final class TelegramBackgroundSchedule {
                     ? current.substring("گروه‌های عمومی تلگرام: ".length()) : "—";
                 boolean success="finished".equals(run.optString("state"))
                     && run.optInt("errors")==0;
-                status(app,success?"ready":"error",topic,run.optInt("groups"));
-                if(success) prefs(app).edit()
+                boolean queried=run.optInt("topic")>0;
+                status(app,success?(queried?"ready":"cooldown"):"error",
+                    topic,run.optInt("groups"));
+                if(success && queried) prefs(app).edit()
                     .putLong("last_success",System.currentTimeMillis()).apply();
             } catch(InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
