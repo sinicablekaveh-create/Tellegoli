@@ -125,6 +125,15 @@ final class DiscoveryData {
         }
     }
 
+    List<String[]> importedSourceExport() {
+        List<String[]> out=new ArrayList<>();
+        try(Cursor c=store.getReadableDatabase().rawQuery(
+                "SELECT url,title,added FROM imported_web_sources ORDER BY added,url",null)) {
+            while(c.moveToNext())out.add(new String[]{c.getString(0),c.getString(1),c.getString(2)});
+        }
+        return out;
+    }
+
     /** All checked or pending public website URLs, including source status. */
     List<String[]> webExport() {
         List<String[]> out=new ArrayList<>();
