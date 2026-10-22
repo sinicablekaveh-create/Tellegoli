@@ -197,7 +197,7 @@ public final class MainActivity extends Activity {
     Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
     intent.addCategory(Intent.CATEGORY_OPENABLE);
     intent.setType(ExcelWorkbook.MIME);
-    intent.putExtra(Intent.EXTRA_TITLE,"Electric_Connect_Contacts.xlsx");
+    intent.putExtra(Intent.EXTRA_TITLE,"Tellegoli_Contacts.xlsx");
     try {startActivityForResult(intent,REQUEST_EXPORT_CONTACTS);}
     catch(Exception error){toast("برنامه‌ای برای ذخیرهٔ فایل اکسل در دسترس نیست.");}
   }
@@ -297,7 +297,7 @@ public final class MainActivity extends Activity {
     Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
     intent.addCategory(Intent.CATEGORY_OPENABLE);
     intent.setType(ExcelWorkbook.MIME);
-    intent.putExtra(Intent.EXTRA_TITLE,"Telegram_Connect_Contacts_Groups_Queue.xlsx");
+    intent.putExtra(Intent.EXTRA_TITLE,"Tellegoli_Contacts_Groups_Queue.xlsx");
     try {startActivityForResult(intent,REQUEST_EXPORT_ALL);}
     catch(Exception error){toast("انتخاب محل خروجی اکسل ممکن نشد.");}
   }
@@ -357,7 +357,7 @@ public final class MainActivity extends Activity {
     Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
     intent.addCategory(Intent.CATEGORY_OPENABLE);
     intent.setType("text/plain");
-    intent.putExtra(Intent.EXTRA_TITLE,"Telegram_Connect_Full_Report.txt");
+    intent.putExtra(Intent.EXTRA_TITLE,"Tellegoli_Full_Report.txt");
     try {startActivityForResult(intent,REQUEST_EXPORT_TXT);}
     catch(Exception error){toast("انتخاب محل خروجی TXT ممکن نشد.");}
   }
@@ -368,7 +368,7 @@ public final class MainActivity extends Activity {
         List<String[]> rows=combinedReportRows();
         try(OutputStream out=getContentResolver().openOutputStream(destination,"w")) {
           if(out==null)throw new java.io.IOException("No export stream");
-          ExcelWorkbook.write(out,"تلگرام کانکت",rows);
+          ExcelWorkbook.write(out,"تلگولی",rows);
         }
         runOnUiThread(()->{if(!isDestroyed())toast("اکسل کامل با "+(rows.size()-1)+" ردیف ذخیره شد.");});
       }catch(Exception e){
@@ -569,7 +569,7 @@ public final class MainActivity extends Activity {
   private void requestBackup(boolean restore) {
     Intent picker=new Intent(restore?Intent.ACTION_OPEN_DOCUMENT:Intent.ACTION_CREATE_DOCUMENT);
     picker.addCategory(Intent.CATEGORY_OPENABLE);picker.setType("application/json");
-    if(!restore)picker.putExtra(Intent.EXTRA_TITLE,"Electric_Connect_Backup.json");
+    if(!restore)picker.putExtra(Intent.EXTRA_TITLE,"Tellegoli_Backup.json");
     try{startActivityForResult(picker,restore?7344:7343);}catch(Exception e){toast("انتخاب فایل در این دستگاه ممکن نشد.");}
   }
 
@@ -598,13 +598,13 @@ public final class MainActivity extends Activity {
 
     LinearLayout automaticCard=newCard();
     automaticCard.addView(text("جستجوی خودکار وب هر ۱۵ دقیقه",17,true));
-    CheckBox daily=new CheckBox(this);
-    daily.setText("جستجوی وب در پس‌زمینه فعال باشد");
-    daily.setMinHeight(dp(52));
-    daily.setChecked(getSharedPreferences("discovery",MODE_PRIVATE)
+    CheckBox webToggle=new CheckBox(this);
+    webToggle.setText("جستجوی وب در پس‌زمینه فعال باشد");
+    webToggle.setMinHeight(dp(52));
+    webToggle.setChecked(getSharedPreferences("discovery",MODE_PRIVATE)
         .getBoolean("periodic",true));
-    daily.setOnCheckedChangeListener((v,enabled)->setAutomaticDiscovery(enabled));
-    automaticCard.addView(daily);
+    webToggle.setOnCheckedChangeListener((v,enabled)->setAutomaticDiscovery(enabled));
+    automaticCard.addView(webToggle);
     automaticCard.addView(text("هر ۱۵ دقیقه یک نوبت وب‌گردی برنامه‌ریزی می‌شود. وقتی صف پیام فعال باشد، بین ارسال‌های ۸ دقیقه‌ای هم جستجوی وب انجام می‌شود. زمان دقیق در اندروید تضمین نمی‌شود.",12,false));
     card(automaticCard);
 
