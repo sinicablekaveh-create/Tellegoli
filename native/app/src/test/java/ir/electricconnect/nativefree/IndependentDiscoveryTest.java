@@ -118,6 +118,27 @@ public class IndependentDiscoveryTest {
         assertTrue(data.total("discovery_urls")>=141); // Bundled fallback sites may be queued too.
     }
 
+
+    @Test public void anExcelWebsiteContactLinkStillExpandsWithOldPendingBacklog()throws Exception {
+        for(int i=0;i<120;i++)data.queue("https://old-site"+i+".example/contact");
+        DiscoveryCoordinator.Run r=run();
+        r.seeds.clear();
+        r.seeds.add("https://fresh-link.example/");
+        r.maxHosts=1;r.maxPages=2;
+        new PublicWebsiteContactsProvider((url,hosts)->{
+            if(url.endsWith("robots.txt"))
+                return page(200,"User-agent: *\\nAllow: /","text/plain");
+            if(url.endsWith("/contact"))
+                return page(200,html("02156519931"),"text/html");
+            return page(200,"<title>شرکت پیمانکار برق صنعتی</title>"
+                +"<a href='/contact'>تماس با ما</a>","text/html");
+        }).discover(r);
+        assertEquals(2,r.pages);
+        assertEquals(1,r.saved);
+        assertEquals("https://fresh-link.example/contact",
+            store.find("02156519931",0,10).get(0).source);
+    }
+
     @Test public void exa403FallsBackToIndependentSourceWithoutRepeatingPaidRequest()throws Exception {
         AtomicInteger exa=new AtomicInteger();
         DiscoveryCoordinator.Run r=run();
