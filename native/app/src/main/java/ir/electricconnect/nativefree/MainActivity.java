@@ -349,6 +349,13 @@ public final class MainActivity extends Activity {
       rows.add(new String[]{"گزارش صف",q[1],q[2],q[5],"TDLib",q[3],q[4],
           q[8],q[0],q[6]+"؛ ثبت: "+q[7]+"؛ شناسه پیام: "+q[9],""});
     }
+    // Export imported website sources in the same XLSX shape that the importer
+    // accepts; this also makes source lists portable between devices.
+    for(String[] site:new DiscoveryData(store).importedSourceExport()) {
+      rows.add(new String[]{"منبع وب",site[1],site[0],
+          "سایت عمومی مشتری‌یابی","ورودی اکسل","","",formatTime(Long.parseLong(site[2])),
+          "","در جستجوی دوره‌ای استفاده می‌شود",""});
+    }
     try(Cursor pages=store.getReadableDatabase().rawQuery(
         "SELECT url,state,attempts,updated FROM discovery_urls ORDER BY updated DESC",null)) {
       while(pages.moveToNext())rows.add(new String[]{"نتیجه وب","صفحه عمومی",
