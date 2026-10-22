@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+}
+android {
+    namespace 'ir.electricconnect.nativefree'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'ir.electricconnect.tellegoli'
+        minSdk 26
+        targetSdk 35
+        versionCode 21
+        versionName '0.10.2'
+        testInstrumentationRunner 'ir.electricconnect.nativefree.NativeSmokeInstrumentation'
+        // Normal release/debug builds retain the existing application label.
+        manifestPlaceholders = [appLabel: '@string/app_name']
+    }
+    // Separate, opt-in test installation. It cannot read or overwrite the installed
+    // Electric Connect database, TDLib session, preferences, or work queue, because
+    // Android assigns its own app-specific sandbox to this package.
+    // Normal builds do not set ecStandaloneTest and are completely unchanged.
+    buildTypes {
+        debug {
+            if (project.findProperty('ecStandaloneTest')?.toString() == 'true') {
+                applicationIdSuffix '.sandbox'
+                versionNameSuffix '-sandbox'
+                manifestPlaceholders = [appLabel: 'تلگولی — آزمایشی']
+            }
+        }
+    }
+    // Opt-in private signing for repeatable builds. Never commit a key or password.
+    if (System.getenv('EC_SIGNING_STORE')) {
+        signingConfigs {
+            persistent {
+                storeFile file(System.getenv('EC_SIGNING_STORE'))
+                storePassword System.getenv('EC_SIGNING_PASSWORD')
+                keyAlias System.getenv('EC_SIGNING_ALIAS') ?: 'electric-connect'
+                keyPassword System.getenv('EC_SIGNING_PASSWORD')
+            }
+        }
+        buildTypes { debug { signingConfig signingConfigs.persistent } }
+    }
+    buildFeatures { buildConfig true }
+    testOptions { unitTests.includeAndroidResources = true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// Bundled TDLib JNI + Android native libraries, pinned Maven Central artifact.
+dependencies {
+    implementation 'io.github.tdlib-android:core:0.1.1'
+    implementation 'androidx.work:work-runtime:2.10.5'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'org.jsoup:jsoup:1.18.3'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'androidx.work:work-testing:2.10.5'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+}
