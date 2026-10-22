@@ -26,7 +26,7 @@ final class DiscoverySchedule {
                 .putBoolean("sales_auto_enabled",periodic)
                 .putBoolean("periodic",periodic)
                 .putBoolean("periodic_15_minutes",true)
-                .putInt("scope",2).apply();
+                .putInt("scope",settings.getInt("scope",2)).apply();
         }
         if(settings.getBoolean("periodic",false)) {
             try {
