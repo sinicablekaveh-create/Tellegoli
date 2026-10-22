@@ -1,0 +1,65 @@
+# Build on Codemagic's personal macOS M2 free tier (separate from GitHub Actions).
+# No Telegram api_hash, session, signing key or private data is needed.
+# Standalone debug-signed Tellegoli application with its own Android package.
+# Do not embed personal Telegram/Exa secrets in the public repository.
+workflows:
+  electric-connect-0102-android:
+    name: Tellegoli 0.10.2 - Tests, lint and standalone APK
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      java: 17
+    scripts:
+      - name: Prepare exact Gradle 8.11.1 and Android SDK 35
+        script: |
+          set -euo pipefail
+          mkdir -p "$CM_BUILD_DIR/.ci-gradle" "$CM_BUILD_DIR/native"
+          curl --fail --location --retry 3 --silent --show-error \
+            https://services.gradle.org/distributions/gradle-8.11.1-bin.zip \
+            -o "$CM_BUILD_DIR/.ci-gradle/gradle-8.11.1-bin.zip"
+          unzip -q "$CM_BUILD_DIR/.ci-gradle/gradle-8.11.1-bin.zip" -d "$CM_BUILD_DIR/.ci-gradle"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/native/local.properties"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          # On Codemagic macOS M2, sdkmanager is installed but may not be on PATH.
+          # Discover it using the SDK root, then Codemagic's documented default.
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="/usr/local/share/android-sdk/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "Android sdkmanager not found; SDK root: $ANDROID_SDK_ROOT" >&2
+            exit 1
+          fi
+          echo "Using Android SDK manager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-35" "build-tools;35.0.0"
+      - name: Test, lint and build standalone Tellegoli APK
+        script: |
+          set -euo pipefail
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          env -u EC_SIGNING_STORE -u EC_SIGNING_PASSWORD -u EC_SIGNING_ALIAS \
+            "$CM_BUILD_DIR/.ci-gradle/gradle-8.11.1/bin/gradle" \
+            --no-daemon -p native \
+            testDebugUnitTest lintDebug assembleDebug
+      - name: Verify APK version, Android signature, native TDLib and checksum
+        script: |
+          set -euo pipefail
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          APK="native/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          mkdir -p dist-codemagic
+          bash native/scripts/verify-apk.sh "$APK" dist-codemagic normal
+          cp "$APK" dist-codemagic/tellegoli.apk
+          (cd dist-codemagic && shasum -a 256 tellegoli.apk > SHA256SUMS.txt)
+          git rev-parse HEAD > dist-codemagic/SOURCE-COMMIT.txt
+          printf '%s\n' 'Tellegoli independent debug-signed APK. Live Telegram login and delivery not verified.' \
+            'The original Electric Connect app can remain installed; Tellegoli uses a separate app ID.' \
+            'For later Tellegoli upgrades keep the signing certificate; back up before reinstalling.' \
+            > dist-codemagic/READ-FIRST.txt
+    artifacts:
+      - dist-codemagic/*.apk
+      - dist-codemagic/*.txt
+      - native/app/build/outputs/apk/debug/*.apk
+      - native/app/build/reports/tests/**/*
+      - native/app/build/test-results/testDebugUnitTest/**/*.xml
+      - native/app/build/reports/lint-results-debug.*
