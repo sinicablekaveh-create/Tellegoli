@@ -40,10 +40,36 @@ public class TelegramConnectSalesDashboardTest {
             assertNotNull(find(root,"شروع جستجوی مشتریان و گروه‌ها"));
             assertNotNull(find(root,"جستجوی خودکار وب هر ۱۵ دقیقه"));
             assertNotNull(find(root,"جستجوی وب ۱۵ دقیقه‌ای + صف ۸ دقیقه‌ای"));
+            assertNotNull(find(root,"در پس‌زمینه حتی وقتی برنامه باز نیست"));
+            assertNotNull(find(root,"وضعیت چهار بخش"));
+            assertNotNull(find(root,"خروجی کامل Excel: شماره‌ها، گروه‌ها، منابع و وضعیت"));
             assertNotNull(find(root,"صف و ارسال به گروه‌ها"));
             assertNotNull(find(root,"مخاطبان و شماره‌های تماس"));
             assertNotNull(find(root,"گروه‌های تلگرام"));
             assertNotNull(find(root,"خروجی اکسل"));
+        }
+    }
+
+    @Test public void fourModuleStatusAndOneButtonCompleteExcelExportAreVisible() {
+        Context app=RuntimeEnvironment.getApplication();
+        app.getSharedPreferences("discovery",Context.MODE_PRIVATE)
+            .edit().putBoolean("sales_auto_enabled",false).commit();
+        try(var controller=Robolectric.buildActivity(MainActivity.class).setup()) {
+            MainActivity activity=controller.get();
+            TextView live=org.robolectric.util.ReflectionHelpers.getField(activity,"liveStatus");
+            assertNotNull("Home needs a real live status TextView",live);
+            String status=live.getText().toString();
+            for(String module:new String[]{"۱. جستجوی وب","۲. جستجوی گروه‌های عمومی تلگرام",
+                    "۳. جستجوی شماره تماس شرکت‌ها","۴. صف پیام‌های تأییدشده"})
+                assertTrue("Missing module in live status: "+module,status.contains(module));
+            TextView excel=find(activity.getWindow().getDecorView(),
+                "خروجی کامل Excel: شماره‌ها، گروه‌ها، منابع و وضعیت");
+            assertNotNull(excel);
+            excel.performClick();
+            android.content.Intent picker=org.robolectric.Shadows.shadowOf(activity)
+                .getNextStartedActivityForResult().intent;
+            assertEquals(android.content.Intent.ACTION_CREATE_DOCUMENT,picker.getAction());
+            assertEquals(ExcelWorkbook.MIME,picker.getType());
         }
     }
 
