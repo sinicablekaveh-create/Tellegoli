@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit;
 
 final class DiscoverySchedule {
     static final String WORK="tellegoli-public-web-discovery";
+    static final int WEB_INTERVAL_MINUTES=15;
     /**
      * Tellegoli web discovery every 15 minutes by default
      * is enabled on first launch, with a visible switch to disable it at any time.
@@ -17,7 +18,8 @@ final class DiscoverySchedule {
         if(!settings.getBoolean("simple_automation_initialized",false)) {
             // Honor a previous explicit OFF choice when upgrading an installation.
             boolean periodic=settings.contains("periodic")
-                ?settings.getBoolean("periodic",false):true;
+                ?settings.getBoolean("periodic",false)
+                :settings.getBoolean("sales_auto_enabled",true);
             settings.edit()
                 .putBoolean("simple_automation_initialized",true)
                 .putBoolean("sales_auto_enabled",periodic)
@@ -35,8 +37,12 @@ final class DiscoverySchedule {
             }
         }
     }
+    static int intervalMinutes(Context app) {
+        return app.getSharedPreferences("discovery",Context.MODE_PRIVATE)
+            .getBoolean("periodic_15_minutes",true)?WEB_INTERVAL_MINUTES:1440;
+    }
     static PeriodicWorkRequest request(Context app) {
-        int minutes=app.getSharedPreferences("discovery",Context.MODE_PRIVATE).getBoolean("periodic_15_minutes",true)?15:1440;
+        int minutes=intervalMinutes(app);
         return new PeriodicWorkRequest.Builder(DiscoveryWorker.class,minutes,TimeUnit.MINUTES)
             // The first unattended scan is due after the first interval;
             // foreground one-tap discovery remains immediately available.
