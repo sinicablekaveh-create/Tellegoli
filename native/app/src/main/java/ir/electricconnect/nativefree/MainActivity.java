@@ -71,7 +71,8 @@ public final class MainActivity extends Activity {
     super.onCreate(state);
     ElectricUi.styleWindow(this);
     store = new Store(this);
-    setTitle("تلگرام کانکت");
+    DiscoverySchedule.bootstrap(this);
+    setTitle("تلگولی");
     int previous = state == null ? 0 : state.getInt("tab", 0);
     draw(previous >= 0 && previous < tabs.length ? previous : 0);
   }
@@ -146,9 +147,9 @@ public final class MainActivity extends Activity {
     liveHandler.removeCallbacks(liveTick);
     LinearLayout root=vertical();
     root.setBackgroundColor(ElectricUi.BG);
-    String[] subtitle={"مرکز مدیریت ارتباطات صنعت برق","جست‌وجوی محلی و اینترنتی",
+    String[] subtitle={"مرکز ارتباطات صنعت برق","جست‌وجوی محلی و اینترنتی",
         "بانک اطلاعات کسب‌وکارهای شما","پیش‌نویس و صف تأییدشده","تنظیمات و حریم خصوصی"};
-    root.addView(ElectricUi.header(this,"⚡ تلگرام کانکت",subtitle[tab]));
+    root.addView(ElectricUi.header(this,"⚡ تلگولی",subtitle[tab]));
     ScrollView scroller=new ScrollView(this);
     scroller.setFillViewport(true);
     page=vertical();
@@ -580,44 +581,78 @@ public final class MainActivity extends Activity {
   }
   private void openScheduledQueue(){startActivity(new Intent(this,ScheduledQueueActivity.class));}
 
+
+  /** A focused sales dashboard: one discovery action, clear automatic mode, real counts. */
   private void home(){
     LinearLayout hero=ElectricUi.hero(this);
-    hero.addView(ElectricUi.text(this,"تلگرام کانکت   •   "+BuildConfig.VERSION_NAME,
-            12,Color.rgb(200,236,236),true));
-    ElectricUi.addBlock(this,hero,ElectricUi.text(this,"مرکز ارتباطات صنعت برق",24,Color.WHITE,true),8);
+    hero.addView(ElectricUi.text(this,"تلگولی  •  "+BuildConfig.VERSION_NAME,
+        13,Color.rgb(210,245,245),true));
     ElectricUi.addBlock(this,hero,ElectricUi.text(this,
-      "جست‌وجوی مشتریان پروژه‌های برق، ذخیرهٔ شماره‌های تجاری و مدیریت گروه‌های مجاز.",
-      14,Color.rgb(228,246,245),false),5);
+        "مشتری‌یابی خودکار",27,Color.WHITE,true),6);
+    ElectricUi.addBlock(this,hero,ElectricUi.text(this,
+        "شمارهٔ شرکت‌های برق و گروه‌های عمومی تلگرام؛ یکجا و بدون نیاز به کلید پولی.",
+        14,Color.rgb(234,247,245),false),4);
     card(hero);
 
-    LinearLayout row=ElectricUi.row(this);
-    LinearLayout contacts=newCard();
-    contacts.addView(ElectricUi.text(this,Long.toString(store.count("records")),25,ElectricUi.TEAL,true));
-    contacts.addView(text("مخاطب ذخیره‌شده",12,false));
-    LinearLayout drafts=newCard();
-    drafts.addView(ElectricUi.text(this,Long.toString(store.count("drafts")),25,ElectricUi.TEAL,true));
-    drafts.addView(text("پیش‌نویس پیام",12,false));
-    row.addView(contacts,new LinearLayout.LayoutParams(0,-2,1f));
-    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1f);
-    p.setMargins(dp(9),0,0,0);
-    row.addView(drafts,p);
-    ElectricUi.addBlock(this,page,row,12);
+    button("شروع جستجوی مشتریان و گروه‌ها",this::startSalesDiscovery);
 
-    ElectricUi.section(this,page,"چهار ابزار تلگرام کانکت",
-        "برای فروش تجهیزات مدیریت کابل: مشتری‌یابی، گروه‌ها، شماره‌های تجاری و گزارش‌ها");
-    quickAction("⌕","جست‌وجوگر خودکار","Exa اختیاری + سایت‌های پیمانکاران برق + گروه‌های عمومی تلگرام",this::startSalesDiscovery);
-    quickAction("◷","صف و ارسال به گروه‌ها","فقط گروه‌های مجاز؛ انتخاب و تأیید هر پیام",this::openScheduledQueue);
-    quickAction("▣","مخاطبان و شماره‌های تماس","شماره‌های عمومی مشتریان؛ ذخیره و جست‌وجوی آفلاین",()->draw(2));
-    quickAction("⇩","خروجی اکسل","مخاطبان + شماره‌ها + گروه‌ها + گزارش صف",this::requestCombinedXlsxExport);
-    ElectricUi.section(this,page,"گزارش زندهٔ داده‌ها و پیام‌ها","نمایش وضعیت واقعی، بدون حدس دربارهٔ دریافت پیام‌ها");
-    button("خروجی TXT کامل",this::requestCombinedTxtExport);
-    liveStatus=text("در حال بارگذاری گزارش زنده...",13,false);
-    ElectricUi.addBlock(this,page,liveStatus,9);
-    button("تازه‌سازی گزارش زنده",()->liveStatus.setText(liveSummary()));
-    button("ورودی یکجای اکسل (مخاطبان، شماره‌ها، گروه‌ها، کلیدواژه‌ها)",this::requestUnifiedImport);
-    ElectricUi.section(this,page,"وضعیت جست‌وجوی خودکار","پیشرفت زنده، گروه‌های تازه و شماره‌های جدید");
-    discoveryUi=new DiscoveryUi(this,page,null,true);
-    note("تلگرام: اتصال و پروکسی در تنظیمات | Exa: فقط با کلید و فعال‌سازی خودت");
+    LinearLayout automaticCard=newCard();
+    automaticCard.addView(text("جستجوی خودکار روزانه",17,true));
+    CheckBox daily=new CheckBox(this);
+    daily.setText("فعال باشد؛ حتی وقتی برنامه بسته است");
+    daily.setMinHeight(dp(52));
+    daily.setChecked(getSharedPreferences("discovery",MODE_PRIVATE)
+        .getBoolean("periodic",true));
+    daily.setOnCheckedChangeListener((v,enabled)->setAutomaticDiscovery(enabled));
+    automaticCard.addView(daily);
+    automaticCard.addView(text("وب‌سایت‌های عمومی در پس‌زمینه بررسی می‌شوند. زمان اجرا تقریبی است؛ جستجوی تلگرام فقط هنگام باز بودن برنامه و آماده بودن حساب انجام می‌شود.",12,false));
+    card(automaticCard);
+
+    LinearLayout stats=ElectricUi.row(this);
+    LinearLayout contactStat=newCard();
+    contactStat.addView(ElectricUi.text(this,
+        String.valueOf(store.count("records")),27,ElectricUi.TEAL,true));
+    contactStat.addView(text("شمارهٔ تجاری ذخیره‌شده",12,false));
+    LinearLayout groupStat=newCard();
+    long groupCount=new DiscoveryData(store).savedGroupCount();
+    groupStat.addView(ElectricUi.text(this,String.valueOf(groupCount),27,ElectricUi.TEAL,true));
+    groupStat.addView(text("گروه عمومی ذخیره‌شده",12,false));
+    stats.addView(contactStat,new LinearLayout.LayoutParams(0,-2,1f));
+    LinearLayout.LayoutParams groupWidth=new LinearLayout.LayoutParams(0,-2,1f);
+    groupWidth.setMargins(dp(10),0,0,0);
+    stats.addView(groupStat,groupWidth);
+    ElectricUi.addBlock(this,page,stats,12);
+
+    ElectricUi.section(this,page,"دسترسی سریع",null);
+    quickAction("▣","مخاطبان و شماره‌های تماس",
+        "دیدن نتایج و جستجو در شماره‌های ذخیره‌شده",()->draw(2));
+    quickAction("◈","گروه‌های تلگرام",
+        "کشف و مرور گروه‌های عمومی؛ بدون عضویت خودکار",this::openTelegramBrowser);
+    quickAction("⇩","خروجی اکسل",
+        "دریافت شماره‌ها، گروه‌ها و گزارش صف",this::requestCombinedXlsxExport);
+    quickAction("◷","صف و ارسال به گروه‌ها",
+        "فقط پیام‌هایی که خودت تأیید کرده‌ای",this::openScheduledQueue);
+
+    LinearLayout statusCard=newCard();
+    statusCard.addView(text("گزارش جستجو",17,true));
+    discoveryUi=new DiscoveryUi(this,statusCard,null,true);
+    card(statusCard);
+    note("جستجو هیچ پیامی ارسال نمی‌کند. تنظیمات پیشرفته و Exa در بخش تنظیمات هستند.");
+  }
+
+  private void setAutomaticDiscovery(boolean enabled) {
+    android.content.SharedPreferences preferences=getSharedPreferences("discovery",MODE_PRIVATE);
+    preferences.edit().putBoolean("sales_auto_enabled",enabled).putInt("scope",2).apply();
+    if(enabled) {
+      preferences.edit().putLong("sales_auto_started",0).apply();
+      DiscoverySchedule.enable(this);
+      ((DiscoveryApplication)getApplication()).maybeAutoDiscover();
+      toast("جستجوی روزانه فعال شد؛ جستجوی وب در پس‌زمینه زمان‌بندی می‌شود.");
+    } else {
+      DiscoverySchedule.disable(this);
+      DiscoveryCoordinator.get(this).stopByUser();
+      toast("جستجوی خودکار خاموش شد. اطلاعات قبلی محفوظ‌اند.");
+    }
   }
 
   private void searchPage() {
@@ -794,7 +829,7 @@ public final class MainActivity extends Activity {
   private void settingsPage(){
     ElectricUi.section(this,page,"وضعیت و تنظیمات","اطلاعات برنامه و انتخاب‌های شما");
     LinearLayout info=newCard();
-    info.addView(text("تلگرام کانکت  •  نسخه "+BuildConfig.VERSION_NAME,16,true));
+    info.addView(text("تلگولی  •  نسخه "+BuildConfig.VERSION_NAME,16,true));
     info.addView(text("برنامهٔ بومی اندروید؛ بدون Termux، WebView یا سرور محلی",13,false));
     info.addView(ElectricUi.badge(this,
           getSharedPreferences("exa_ui_settings",MODE_PRIVATE)
@@ -805,27 +840,16 @@ public final class MainActivity extends Activity {
     quickAction("◎","تحقیق تکمیلی اختیاری","تنظیم کلید شخصی Exa؛ برای کشف پایه لازم نیست",this::openExa);
     button("منابع عمومی اختیاری",()->DiscoveryUi.sources(this));
     button("ورود مستقیم کلیدواژه‌ها از Excel",this::requestKeywordImport);
-    android.widget.CheckBox automatic=new android.widget.CheckBox(this);
-    automatic.setText("جست‌وجوی خودکار مشتریان بالقوه (روزی یک‌بار هنگام باز بودن برنامه)");
-    automatic.setMinHeight(dp(48));
+
+    CheckBox automatic=new CheckBox(this);
+    automatic.setText("جستجوی خودکار روزانه");
+    automatic.setMinHeight(dp(52));
     automatic.setChecked(getSharedPreferences("discovery",MODE_PRIVATE)
-        .getBoolean("sales_auto_enabled",true));
-    automatic.setOnCheckedChangeListener((v,on)->
-        getSharedPreferences("discovery",MODE_PRIVATE).edit()
-            .putBoolean("sales_auto_enabled",on).apply());
+        .getBoolean("periodic",true));
+    automatic.setOnCheckedChangeListener((v,on)->setAutomaticDiscovery(on));
     page.addView(automatic);
-    android.widget.CheckBox periodic=new android.widget.CheckBox(this);
-    periodic.setText("کشف دوره‌ای");periodic.setMinHeight(dp(48));
-    periodic.setChecked(getSharedPreferences("discovery",MODE_PRIVATE).getBoolean("periodic",false));
-    periodic.setOnCheckedChangeListener((v,on)->{if(on)DiscoverySchedule.enable(this);else {DiscoverySchedule.disable(this);DiscoveryCoordinator.get(this).stop();}});
-    page.addView(periodic);
-    android.widget.CheckBox fifteen=new android.widget.CheckBox(this);
-    fifteen.setText("جست‌وجوی خودکار هر ۱۵ دقیقه (در پس‌زمینه)");
-    fifteen.setMinHeight(dp(48));
-    fifteen.setChecked(getSharedPreferences("discovery",MODE_PRIVATE).getBoolean("periodic_15_minutes",false));
-    fifteen.setOnCheckedChangeListener((v,on)->DiscoverySchedule.setFifteenMinutes(this,on));
-    page.addView(fifteen);
-    note("حالت عادی روزانه است؛ با انتخاب ۱۵ دقیقه، کاوش عمومی وب در پس‌زمینه به‌صورت تقریبی هر ۱۵ دقیقه زمان‌بندی می‌شود. برای فعال شدن، «کشف دوره‌ای» را هم روشن کنید. زمان دقیق تضمین نمی‌شود؛ تلگرام فقط در حضور شما و حساب آماده جست‌وجو می‌شود.");
+    note("در حالت روشن، وب عمومی به‌صورت تقریبی روزی یک‌بار در پس‌زمینه بررسی می‌شود؛ گروه‌های تلگرام فقط در حضور شما بررسی می‌شوند.");
+    button("تنظیمات پیشرفتهٔ زمان‌بندی",this::advancedScheduleDialog);
     android.content.SharedPreferences schedule=getSharedPreferences("discovery",MODE_PRIVATE);
     note("آخرین تلاش: "+formatTime(schedule.getLong("last_attempt",0))+" | آخرین دریافت موفق: "+formatTime(schedule.getLong("last_success",0))+" | شمارهٔ جدید: "+schedule.getInt("last_new",0));
     button("پشتیبان‌گیری مخاطبان و پیش‌نویس‌ها",()->requestBackup(false));
@@ -841,6 +865,24 @@ public final class MainActivity extends Activity {
         .setNegativeButton("انصراف",null)
         .setPositiveButton("حذف",(d,w)->{DiscoveryCoordinator.get(this).stop();DiscoverySchedule.disable(this);store.clearAll();draw(4);toast("داده‌ها حذف شدند");})
         .show(),true,true),10);
+  }
+
+
+  private void advancedScheduleDialog() {
+    CheckBox frequent=new CheckBox(this);
+    frequent.setText("جستجوی وب هر ۱۵ دقیقه به‌جای روزانه");
+    frequent.setMinHeight(dp(52));
+    frequent.setChecked(getSharedPreferences("discovery",MODE_PRIVATE)
+        .getBoolean("periodic_15_minutes",false));
+    new AlertDialog.Builder(this)
+        .setTitle("زمان‌بندی پیشرفته")
+        .setMessage("جستجوی پس‌زمینه تقریبی است؛ به اینترنت و باتری وابسته است. این گزینه فقط روی وب عمومی اثر دارد، نه ارسال پیام.")
+        .setView(frequent)
+        .setNegativeButton("انصراف",null)
+        .setPositiveButton("ذخیره",(dialog,which)->{
+          DiscoverySchedule.setFifteenMinutes(this,frequent.isChecked());
+          toast("زمان‌بندی ذخیره شد.");
+        }).show();
   }
 
   private String formatTime(long time) {return time==0?"هنوز اجرا نشده":android.text.format.DateFormat.format("yyyy/MM/dd HH:mm",time).toString();}
