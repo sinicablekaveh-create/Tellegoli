@@ -186,7 +186,7 @@ final class UnifiedExcelImport {
             ||type.contains("سایت")||type.contains("وب سایت")
             ||(!site.isEmpty() && contactNumber.isEmpty() && !type.contains("گروه")
                 && !type.contains("مخاطب") && !type.contains("نتیجه وب")
-                && !type.contains("گزارش صف"));
+                && !type.contains("گزارش صف") && !type.contains("وضعیت"));
         if(sourceRow){
             if(site.isEmpty()||!site.startsWith("https://")){
                 String generic=field(heads,row,"شماره / شناسه / آدرس","شماره/شناسه/آدرس");
@@ -221,7 +221,7 @@ final class UnifiedExcelImport {
             if(!name.isEmpty()&&PublicPhoneDiscovery.normalizeIranPhone(phone)!=null)
                 parsed.contacts.add(new Contact(name,phone,category,source));
             else parsed.rejected++;
-        } else if(!type.isEmpty()&&!type.contains("نتیجه وب")&&!type.contains("گزارش صف")) {
+        } else if(!type.isEmpty()&&!type.contains("نتیجه وب")&&!type.contains("گزارش صف")&&!type.contains("وضعیت")) {
             parsed.rejected++;
         }
     }
