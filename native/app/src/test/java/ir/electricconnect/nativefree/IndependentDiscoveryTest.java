@@ -207,7 +207,10 @@ public class IndependentDiscoveryTest {
                 return page(200,"","text/plain");
             }).discover(first);fail();
         }catch(InterruptedIOException expected){}
-        assertEquals(1,data.pending(10).size());
+        // Extra fallback sources are intentionally queued by the new discovery rotation.
+        // Cancellation must checkpoint THIS source, not require the global queue to contain only one URL.
+        assertEquals(Collections.singletonList("https://cable.example/"),
+            data.pendingForHosts(Collections.singleton("cable.example"),20));
         DiscoveryCoordinator.Run resumed=run();
         new PublicWebsiteContactsProvider((url,hosts)->page(200,url.endsWith("robots.txt")?"":html("02156519931"),url.endsWith("robots.txt")?"text/plain":"text/html")).discover(resumed);
         assertEquals(1,resumed.saved);assertEquals(1,store.count("records"));
@@ -220,16 +223,28 @@ public class IndependentDiscoveryTest {
     @Test public void rateLimitsHaveFiniteRetryCapAndPersistentRetryCheckpoint()throws Exception {
         DiscoveryCoordinator.Run r=run();AtomicInteger calls=new AtomicInteger();
         new PublicWebsiteContactsProvider((url,hosts)->{calls.incrementAndGet();return page(429,"","text/plain");}).discover(r);
-        assertEquals(3,calls.get());assertEquals(1,r.errors);assertEquals(1,data.pending(20).size());
+        assertEquals(3,calls.get());assertEquals(1,r.errors);
+        assertEquals(Collections.singletonList("https://cable.example/"),
+            data.pendingForHosts(Collections.singleton("cable.example"),20));
         JSONObject state=data.get("run");assertEquals(1,state.optInt("errors"));
     }
     @Test public void timeoutDoesNotWipeOldContactsAndCanResumeWithoutRefetchingDoneUrls()throws Exception {
         store.insertRecord("قبلی","02156519930","برق","دستی");DiscoveryCoordinator.Run first=run();
         new PublicWebsiteContactsProvider((url,hosts)->{throw new java.net.SocketTimeoutException();}).discover(first);
-        assertEquals(1,store.count("records"));assertEquals(1,data.pending(20).size());
+        assertEquals(1,store.count("records"));
+        assertEquals(Collections.singletonList("https://cable.example/"),
+            data.pendingForHosts(Collections.singleton("cable.example"),20));
         DiscoveryCoordinator.Run retry=run();new PublicWebsiteContactsProvider((url,hosts)->page(200,url.endsWith("robots.txt")?"":html("02156519931"),url.endsWith("robots.txt")?"text/plain":"text/html")).discover(retry);
-        assertEquals(2,store.count("records"));assertTrue(data.pending(20).isEmpty());
-        AtomicInteger calls=new AtomicInteger();new PublicWebsiteContactsProvider((url,hosts)->{calls.incrementAndGet();throw new IOException();}).discover(run());assertEquals(0,calls.get());
+        assertEquals(2,store.count("records"));
+        assertTrue("Completed source must leave its host queue",
+            data.pendingForHosts(Collections.singleton("cable.example"),20).isEmpty());
+        // A later run may still scan new default fallback hosts. The completed URL must not be refetched.
+        AtomicInteger refetchedCompletedHost=new AtomicInteger();
+        new PublicWebsiteContactsProvider((url,hosts)->{
+            if(url.startsWith("https://cable.example/"))refetchedCompletedHost.incrementAndGet();
+            throw new IOException();
+        }).discover(run());
+        assertEquals(0,refetchedCompletedHost.get());
     }
     @Test public void queueGapRefreshesOldPermittedPagesButNeverDeniedOnes() {
         String allowed="https://cable.example/contact";
