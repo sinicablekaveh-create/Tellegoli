@@ -151,7 +151,8 @@ final class UnifiedExcelImport {
             ||s.equals("نوع داده")||s.equals("حوزه")||s.equals("عنوان")
             ||s.equals("آدرس سایت")||s.equals("لینک سایت")||s.equals("نشانی وب")
             ||s.equals("وب سایت")||s.equals("website")||s.equals("url")
-            ||s.equals("آدرس وب")||s.equals("لینک منبع");
+            ||s.equals("آدرس وب")||s.equals("لینک منبع")||s.equals("آدرس اینترنتی")
+            ||s.equals("منبع")||s.equals("سایت")||s.equals("لینک")||s.equals("site url");
     }
     private static String field(Map<String,String> heads,Map<String,String> row,String... aliases){
         for(String alias:aliases){
@@ -177,7 +178,8 @@ final class UnifiedExcelImport {
             return;
         }
         String site=field(heads,row,"آدرس سایت","لینک سایت","نشانی وب",
-            "وب سایت","وب‌سایت","website","url","آدرس وب","لینک منبع","نشانی منبع");
+            "وب سایت","وب‌سایت","website","url","site url","آدرس وب",
+            "لینک منبع","نشانی منبع","آدرس اینترنتی","منبع","سایت","لینک");
         if(heads.isEmpty() && first(row).startsWith("https://"))site=first(row);
         String contactNumber=field(heads,row,"شماره تماس","شماره تلفن","تلفن","موبایل","شماره");
         boolean sourceRow=type.contains("منبع وب")||type.contains("منبع جستجو")
