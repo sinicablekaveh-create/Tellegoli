@@ -453,18 +453,25 @@ public final class MainActivity extends Activity {
       }
     }
     JSONObject run=DiscoveryCoordinator.get(this).snapshot();
+    JSONObject webRun=DiscoveryCoordinator.webBackground(this).snapshot();
+    JSONObject groupRun=DiscoveryCoordinator.telegramBackground(this).snapshot();
     android.content.SharedPreferences web=getSharedPreferences("discovery",MODE_PRIVATE);
     String webMode=web.getBoolean("periodic",false)?"فعال، برنامه‌ریزی تقریبی ۱۵ دقیقه":"خاموش";
     return "۱. جستجوی وب: "+webMode+
         " | آخرین تلاش: "+formatTime(web.getLong("last_attempt",0))+
         "\n   سایت‌های واردشده: "+new DiscoveryData(store).importedSourceCount()+
         " | صفحات بررسی‌شده: "+donePages+
+        "\n   اجرای مستقل وب: "+webRun.optString("state","آماده")+
+        " | صفحات آخرین نوبت: "+webRun.optInt("pages")+
+        " | خطا: "+webRun.optInt("errors")+
         "\n۲. جستجوی گروه‌های عمومی تلگرام در پس‌زمینه: "+
             TelegramBackgroundSchedule.describe(this)+
         "\n   گروه‌های کشف‌شده: "+publicGroups+
         " | گروه‌های اکسل: "+new DiscoveryData(store).importedGroupCount()+
+        "\n   اجرای مستقل تلگرام: "+groupRun.optString("state","آماده")+
+        " | گروه‌های جدید آخرین نوبت: "+groupRun.optInt("groups")+
         "\n۳. جستجوی شماره تماس شرکت‌ها: "+store.count("records")+" شماره ذخیره‌شده"+
-        " | شمارهٔ جدید در آخرین کاوش: "+run.optInt("saved")+
+        " | شمارهٔ جدید در آخرین کاوش وب مستقل: "+webRun.optInt("saved")+
         "\n۴. صف پیام‌های تأییدشده: "+(ScheduledQueue.enabled(this)?"فعال":"متوقف")+
         " | منتظر: "+waiting+" | در حال ارسال: "+sending+
         "\n   پذیرفته‌شده: "+submitted+" | تأییدشده: "+confirmed+
@@ -719,9 +726,9 @@ public final class MainActivity extends Activity {
       toast("جستجوی فوری وب درخواست شد؛ سپس حدود هر ۱۵ دقیقه منابع بررسی می‌شوند و صفحات تماس اولویت دارند.");
     } else {
       DiscoverySchedule.disable(this);
-      QueueGapDiscovery.cancel(this);
-      DiscoveryCoordinator.get(this).stopByUser();
-      toast("جستجوی خودکار خاموش شد. اطلاعات قبلی محفوظ‌اند.");
+      // Switching off WEB must not cancel unrelated Telegram group discovery.
+      DiscoveryCoordinator.webBackground(this).stop();
+      toast("جستجوی خودکار وب خاموش شد. جستجوی تلگرام جداگانه کنترل می‌شود و اطلاعات قبلی محفوظ‌اند.");
     }
   }
 
@@ -925,7 +932,7 @@ public final class MainActivity extends Activity {
         .getBoolean("periodic",true));
     automatic.setOnCheckedChangeListener((v,on)->setAutomaticDiscovery(on));
     page.addView(automatic);
-    note("در حالت روشن، جستجوی وب عمومی به‌صورت تقریبی هر ۱۵ دقیقه انجام می‌شود و در فاصلهٔ نوبت‌های صف پیام هم ادامه می‌یابد. جستجوی گروه‌های تلگرام فقط با حساب آماده و برنامهٔ باز انجام می‌شود.");
+    note("موتور مستقل وب و شماره‌یاب در پس‌زمینه با WorkManager اجرا می‌شود؛ اجرای دقیق چرخهٔ ۱۵ دقیقه‌ای تضمین نمی‌شود. موتور گروه‌های عمومی تلگرام نیز مستقل است و به حساب TDLib قبلاً واردشده نیاز دارد.");
     button("تنظیمات منابع و محدودیت جستجو",()->DiscoveryUi.sources(this));
     android.content.SharedPreferences schedule=getSharedPreferences("discovery",MODE_PRIVATE);
     note("آخرین تلاش: "+formatTime(schedule.getLong("last_attempt",0))+" | آخرین دریافت موفق: "+formatTime(schedule.getLong("last_success",0))+" | شمارهٔ جدید: "+schedule.getInt("last_new",0));
