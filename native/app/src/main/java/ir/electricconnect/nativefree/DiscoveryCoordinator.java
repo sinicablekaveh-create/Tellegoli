@@ -170,12 +170,14 @@ final class DiscoveryCoordinator {
             " | موضوع "+s.optInt("topic")+" / "+s.optInt("total")+
             "\nصفحات بررسی‌شده: "+s.optInt("pages")+" | گروه‌های جدید: "+s.optInt("groups")+
             "\nشماره‌های عمومی ذخیره‌شدهٔ جدید: "+s.optInt("saved")+" | تکراری: "+s.optInt("duplicates")+
-            "\nخطا / محدودیت دسترسی: "+s.optInt("errors")+
+            "\nزمان سپری‌شدهٔ کاوش: "+(s.optLong("elapsed_ms",0)/1000)+" ثانیه"+
+            " | خطا / محدودیت دسترسی: "+s.optInt("errors")+
             (s.optString("note").isEmpty()?"":"\n"+s.optString("note"));
     }
     static final class Run {
         final DiscoveryData data;final AtomicBoolean cancelled;
-        final long deadline=System.currentTimeMillis()+TimeUnit.MINUTES.toMillis(6);
+        final long startedAt=System.currentTimeMillis();
+        final long deadline=startedAt+TimeUnit.MINUTES.toMillis(6);
         final List<String> seeds=new ArrayList<>();
         List<String> topics=Arrays.asList(TOPICS);
         PublicHttp http;Runnable changed;
@@ -198,7 +200,7 @@ final class DiscoveryCoordinator {
             int index=Math.floorMod(data.get(provider+"_topic_cycle").optInt("next"),topics.size());
             data.put(provider+"_topic_cycle",new JSONObject().put("next",(index+1)%topics.size()));
         }
-        synchronized JSONObject json(){JSONObject o=new JSONObject();try {o.put("scope",scope).put("state",state).put("current",current).put("topic",topic).put("total",total).put("pages",pages).put("saved",saved).put("groups",groups).put("duplicates",duplicates).put("errors",errors).put("note",note).put("updated",System.currentTimeMillis());}catch(Exception ignored){}return o;}
+        synchronized JSONObject json(){JSONObject o=new JSONObject();try {o.put("scope",scope).put("state",state).put("current",current).put("topic",topic).put("total",total).put("pages",pages).put("saved",saved).put("groups",groups).put("duplicates",duplicates).put("errors",errors).put("note",note).put("updated",System.currentTimeMillis()).put("elapsed_ms",System.currentTimeMillis()-startedAt);}catch(Exception ignored){}return o;}
         synchronized void emit(){if(changed!=null)changed.run();else data.put("run",json());}
     }
 }
