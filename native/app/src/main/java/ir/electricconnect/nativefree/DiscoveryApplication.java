@@ -26,7 +26,6 @@ public final class DiscoveryApplication extends Application {
         SharedPreferences prefs=getSharedPreferences("discovery",MODE_PRIVATE);
         TdlibEngine engine=TdlibEngine.get(this);
         DiscoveryCoordinator discovery=DiscoveryCoordinator.get(this);
-        if(discovery.isRunning())return;
         long now=System.currentTimeMillis();
         // Reopen a saved session after process death so an explicit pending
         // request can reach READY even when daily discovery is disabled.
@@ -34,15 +33,16 @@ public final class DiscoveryApplication extends Application {
         if(prefs.getBoolean("telegram_pending",false) && !engine.isReady() && telegramConfigured)
             engine.connect();
         // An explicit pending search also resumes when daily automation is off.
-        if(engine.isReady() && prefs.getBoolean("telegram_pending",false)) {
+        if(engine.isReady() && prefs.getBoolean("telegram_pending",false)
+                && !discovery.isRunning()) {
             long previous=prefs.getLong("telegram_auto_started",0);
-            if(now<prefs.getLong("telegram_retry_after",0)
-                    || now>=previous && now-previous<30L*60*1000)return;
-            if(discovery.start(1,false))prefs.edit()
-                .putLong("telegram_auto_started",now)
-                .putLong("telegram_retry_after",now+30L*60*1000).apply();
-            return;
+            if(now>=prefs.getLong("telegram_retry_after",0)
+                    && !(now>=previous && now-previous<30L*60*1000)
+                    && discovery.start(1,false))
+                prefs.edit().putLong("telegram_auto_started",now)
+                    .putLong("telegram_retry_after",now+30L*60*1000).apply();
         }
+        // A delayed or rate-limited Telegram pass must never starve the public web scan.
         // A public buyer/phone scan is its own engine. Opening the app can
         // start one bounded pass immediately; WorkManager persists the schedule.
         // Neither TDLib readiness nor queue state is required for this scan.
