@@ -70,7 +70,7 @@ final class TelegramBackgroundSchedule {
                 work.cancelUniqueWork(WORK_IMMEDIATE);
             }
         }catch(IllegalStateException ignored){/* Preference still guards every worker. */}
-        if(!allowed)DiscoveryCoordinator.get(context).stopBackgroundTelegram();
+        if(!allowed)DiscoveryCoordinator.telegramBackground(context).stopBackgroundTelegram();
     }
     /** Retry an initial account-not-ready attempt once TDLib reports READY. Never initiate login. */
     static void onAccountReady(Context context) {
@@ -141,7 +141,7 @@ final class TelegramBackgroundSchedule {
                     return Result.success();
                 }
                 if(isStopped()||!enabled(app))return Result.success();
-                DiscoveryCoordinator coordinator=DiscoveryCoordinator.get(app);
+                DiscoveryCoordinator coordinator=DiscoveryCoordinator.telegramBackground(app);
                 if(!coordinator.start(1,true)) {
                     status(app,"busy","—",0);
                     return Result.success();
@@ -165,7 +165,7 @@ final class TelegramBackgroundSchedule {
                     .putLong("last_success",System.currentTimeMillis()).apply();
             } catch(InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
-                DiscoveryCoordinator.get(app).stopBackgroundTelegram();
+                DiscoveryCoordinator.telegramBackground(app).stopBackgroundTelegram();
                 if(enabled(app))status(app,"error","—",0);
             } catch(Exception error) {
                 if(enabled(app))status(app,"error","—",0);
