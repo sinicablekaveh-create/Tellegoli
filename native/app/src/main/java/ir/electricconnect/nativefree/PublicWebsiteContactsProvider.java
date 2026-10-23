@@ -8,6 +8,8 @@ import org.json.JSONObject;
 import java.io.*;
 import java.net.URI;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Bounded, robots-aware public website import; HTML only, no logged-in browser. */
 final class PublicWebsiteContactsProvider implements DiscoveryProvider {
@@ -43,9 +45,9 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
             || "fa.yazdcable.com".equals(host) || "yazdcable.com".equals(host);
     }
     private final PublicHttp.Transport transport;
-    private final Map<String,RobotsRules> robots=new HashMap<>();
-    private final Map<String,Integer> requests=new HashMap<>(),pages=new HashMap<>();
-    private final Map<String,Long> lastRequest=new HashMap<>();
+    private final Map<String,RobotsRules> robots=new ConcurrentHashMap<>();
+    private final Map<String,Integer> requests=new ConcurrentHashMap<>(),pages=new ConcurrentHashMap<>();
+    private final Map<String,Long> lastRequest=new ConcurrentHashMap<>();
     PublicWebsiteContactsProvider(PublicHttp.Transport transport){this.transport=transport;}
     @Override public String name(){return "وب‌سایت‌های عمومی";}
     @Override public void discover(DiscoveryCoordinator.Run run) throws Exception {
@@ -53,43 +55,103 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
         // Search providers run before this website importer: their discovered
         // URLs must be checked before the built-in fallback sites, otherwise
         // maxHosts can silently discard every Exa/SearXNG result.
+        List<String> imported=run.data.rotatedImportedSources(run.importedSourceCursor,
+            Math.max(8,run.maxHosts*3));
         List<String> sources=new ArrayList<>(run.seeds);
+        sources.addAll(imported);
         sources.addAll(rotatedSeeds(run.buyerSeedCursor));
+        List<String> safeSources=new ArrayList<>();
         for(String seed:sources) {
-            try {String safe=PublicHttp.validate(seed,null);String host=URI.create(safe).getHost();
-                if(!oldSupplierSeed(host) && (hosts.contains(host)||hosts.size()<run.maxHosts)) {hosts.add(host);run.data.queue(safe);}
+            try {
+                String safe=PublicHttp.validate(seed,null);
+                if(!oldSupplierSeed(URI.create(safe).getHost())) {
+                    safeSources.add(safe);
+                    run.data.queue(safe);
+                }
             }catch(IOException e){run.error("نشانی منبع مجاز نیست؛ فقط وب‌سایت عمومی امن");}
         }
-        // Restore pending same-host contact links without accepting arbitrary persisted destinations.
-        for(String url:run.data.pending(100))if(hosts.size()<run.maxHosts) {
-            try {String safe=PublicHttp.validate(url,null);String host=URI.create(safe).getHost();if(!oldSupplierSeed(host))hosts.add(host);}catch(IOException ignored){}
+        // Reserve a fair share of this bounded pass for EXCEL sources so
+        // continually refreshed optional search hits cannot starve user imports.
+        int importedShare=Math.max(1,run.maxHosts/2);
+        for(String url:imported) {
+            if(hosts.size()>=importedShare)break;
+            try {
+                String safe=PublicHttp.validate(url,null);
+                String host=URI.create(safe).getHost();
+                if(!oldSupplierSeed(host) && run.data.isPending(safe))hosts.add(host);
+            }catch(IOException ignored){}
         }
-        boolean worked=false;Set<String> attempted=new HashSet<>();
-        for(int round=0;round<run.maxHosts*run.maxPages+8 && run.active();round++) {
-            List<String> pending=run.data.pending(100);String url=null;
+        // Choose sites with work remaining. A completed (or denied) default URL
+        // must NOT occupy one of the 4 host slots and starve new Excel sites.
+        for(String safe:safeSources) {
+            if(hosts.size()>=run.maxHosts)break;
+            if(run.data.isPending(safe))hosts.add(URI.create(safe).getHost());
+        }
+        // Restore unfinished contact links, respecting source and SSRF policies.
+        for(String url:run.data.pending(200)) {
+            if(hosts.size()>=run.maxHosts)break;
+            try {
+                String safe=PublicHttp.validate(url,null);
+                String host=URI.create(safe).getHost();
+                if(!oldSupplierSeed(host))hosts.add(host);
+            }catch(IOException ignored){}
+        }
+        // Keep requests to each individual site strictly sequential (robots rules,
+        // delay and 12-request cap); independent sites can be scanned concurrently.
+        AtomicBoolean worked=new AtomicBoolean(false);
+        int parallelism=Math.min(3,hosts.size());
+        if(parallelism<=1) {
+            for(String host:hosts)scanHost(host,run,worked);
+        } else {
+            ExecutorService pool=Executors.newFixedThreadPool(parallelism);
+            List<Future<?>> tasks=new ArrayList<>();
+            try {
+                for(String host:hosts)tasks.add(pool.submit(()->{
+                    try {scanHost(host,run,worked);}
+                    catch(InterruptedIOException e){throw new UncheckedIOException(e);}
+                }));
+                for(Future<?> task:tasks) {
+                    try {task.get();}
+                    catch(ExecutionException error) {
+                        Throwable cause=error.getCause();
+                        if(cause instanceof UncheckedIOException
+                                && cause.getCause() instanceof InterruptedIOException)
+                            throw (InterruptedIOException)cause.getCause();
+                        throw new IOException("Parallel public site scan failed",cause);
+                    }
+                }
+            } finally {pool.shutdownNow();}
+        }
+        if(!worked.get())run.note="صفحهٔ تازه‌ای دریافت نشد؛ منابع ذخیره‌شده یا تنظیمات منابع را بررسی کنید.";
+    }
+    /** Parallel across distinct hosts, never within the same host. */
+    private void scanHost(String host,DiscoveryCoordinator.Run run,AtomicBoolean worked)
+            throws InterruptedIOException {
+        Set<String> oneHost=Collections.singleton(host);
+        Set<String> attempted=new HashSet<>();
+        for(int round=0;round<run.maxPages+8 && run.active();round++) {
+            List<String> pending=run.data.pendingForHosts(oneHost,100);String url=null;
             for(String candidate:pending) {
-                String host=URI.create(candidate).getHost();
-                if(hosts.contains(host) && !attempted.contains(candidate) && pages.getOrDefault(host,0)<run.maxPages) {url=candidate;break;}
+                if(!attempted.contains(candidate) && pages.getOrDefault(host,0)<run.maxPages) {url=candidate;break;}
             }
             if(url==null)break;
             attempted.add(url);
-            String host=URI.create(url).getHost();
             pages.put(host,pages.getOrDefault(host,0)+1);
-            run.current=name()+": "+host;run.topic=1;run.total=1;run.emit();
+            synchronized(run) {run.current=name()+": "+host;run.topic=1;run.total=1;run.emit();}
             try {
                 RobotsRules rules=robots.get(host);
                 if(rules==null) {
-                    PublicHttp.Page policy=request("https://"+host+"/robots.txt",hosts,run,1500);
+                    PublicHttp.Page policy=request("https://"+host+"/robots.txt",oneHost,run,1500);
                     if(policy.code==404||policy.code==410)rules=new RobotsRules("");
                     else if(policy.code==200 && (policy.type.contains("text")||policy.type.isEmpty()))rules=new RobotsRules(policy.body);
                     else throw new PublicHttp.AccessDenied();
                     robots.put(host,rules);
                 }
-                PublicHttp.Page page=fetch(url,hosts,run,rules,0);
+                PublicHttp.Page page=fetch(url,oneHost,run,rules,0);
                 if(!run.active())throw new InterruptedIOException();
-                if(page.code>=300&&page.code<400) {run.data.finishUrl(url,"done");run.emit();continue;}
+                if(page.code>=300&&page.code<400) {run.data.finishUrl(url,"done");synchronized(run){run.emit();}continue;}
                 if(page.code<200||page.code>=300)throw new PublicHttp.AccessDenied();
-                run.pages++;worked=true;
+                synchronized(run){run.pages++;run.emit();}worked.set(true);
                 if(page.type.contains("html")) {
                     Document doc=Jsoup.parse(page.body,url);
                     if(isAccessChallenge(doc))throw new PublicHttp.AccessDenied();
@@ -103,22 +165,22 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
                     for(Element a:doc.select("a[href^=tel:]"))text.append("\nتلفن تماس: ").append(a.attr("href").substring(4));
                     PublicPhoneDiscovery.Summary summary=PublicPhoneDiscovery.saveBuyers(run.data.store,new JSONArray().put(
                         new JSONObject().put("title",title).put("url",url).put("text",text.toString()).put("provider","وب‌سایت عمومی")),null,run::active);
-                    run.saved+=summary.saved;run.duplicates+=summary.duplicates;
+                    synchronized(run){run.saved+=summary.saved;run.duplicates+=summary.duplicates;run.emit();}
                     for(Element a:doc.select("a[href]")) {
                         String label=SearchText.normalize(a.text()+" "+a.attr("href"));
-                        if(label.matches(".*(contact|about|تماس|درباره|ارتباط|sitemap|feed).*$"))queueLink(url,a.attr("href"),hosts,run);
+                        if(label.matches(".*(contact|about|تماس|درباره|ارتباط|sitemap|feed).*$"))queueLink(url,a.attr("href"),oneHost,run);
                     }
-                    for(String sitemap:rules.sitemaps)queueLink(url,sitemap,hosts,run);
+                    for(String sitemap:rules.sitemaps)queueLink(url,sitemap,oneHost,run);
                 } else if(page.type.contains("xml")) {
                     Document doc=Jsoup.parse(page.body,url,org.jsoup.parser.Parser.xmlParser());
                     for(Element e:doc.select("loc, link")) {
                         String link=e.hasAttr("href")?e.attr("href"):e.text();
                         String decoded=java.net.URLDecoder.decode(link,"UTF-8").toLowerCase(Locale.ROOT);
-                        if(decoded.matches(".*(contact|about|تماس|درباره|sitemap|feed).*$"))queueLink(url,link,hosts,run);
+                        if(decoded.matches(".*(contact|about|تماس|درباره|sitemap|feed).*$"))queueLink(url,link,oneHost,run);
                     }
                 }
                 // Save result and checkpoint before the next network operation.
-                run.data.finishUrl(url,"done");run.emit();
+                run.data.finishUrl(url,"done");synchronized(run){run.emit();}
             } catch(InterruptedIOException e) {
                 if(!run.active()) {run.data.finishUrl(url,"interrupted");throw e;}
                 run.data.finishUrl(url,"retry");run.error("زمان دریافت منبع پایان یافت؛ در اجرای بعد می‌توان ادامه داد.");
@@ -128,7 +190,6 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
                 run.error(e instanceof PublicHttp.AccessDenied?"منبع اجازهٔ دسترسی نداد؛ صفحات قبلی محفوظ است":"خطا یا محدودیت اتصال منبع؛ تلاش محدود و ادامهٔ منابع دیگر");
             }
         }
-        if(!worked)run.note="صفحهٔ تازه‌ای دریافت نشد؛ منابع ذخیره‌شده یا تنظیمات منابع را بررسی کنید.";
     }
     /** Optional contact-form captcha scripts do not make the public page a challenge.
      * No challenge is solved, submitted, or bypassed. */
@@ -142,7 +203,13 @@ final class PublicWebsiteContactsProvider implements DiscoveryProvider {
     }
     private void queueLink(String base,String link,Set<String> hosts,DiscoveryCoordinator.Run run) {
         if(!run.active())return;
-        try {String url=PublicHttp.validate(URI.create(base).resolve(link).toString(),hosts);if(run.data.pending(100).size()<80)run.data.queue(url);}catch(Exception ignored){}
+        try {
+            String url=PublicHttp.validate(URI.create(base).resolve(link).toString(),hosts);
+            // Limit discovered paths per site, not by old pages from OTHER sites.
+            String host=URI.create(url).getHost();
+            if(run.data.pendingForHosts(Collections.singleton(host),80).size()<80)
+                run.data.queue(url);
+        }catch(Exception ignored){}
     }
     private PublicHttp.Page fetch(String url,Set<String> hosts,DiscoveryCoordinator.Run run,RobotsRules rules,int redirects) throws Exception {
         String safe=PublicHttp.validate(url,hosts);

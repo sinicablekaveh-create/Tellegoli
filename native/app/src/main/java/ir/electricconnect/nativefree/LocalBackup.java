@@ -15,6 +15,7 @@ final class LocalBackup {
         root.put("drafts",table(store,"drafts",new String[]{"destination","message","created"}));
         root.put("groups",table(store,"public_groups",new String[]{"id","title","source","found","seen"}));
         root.put("imported_groups",table(store,"imported_groups",new String[]{"lookup_key","title","chat_id","public_link","source","added"}));
+        root.put("imported_web_sources",table(store,"imported_web_sources",new String[]{"url","title","added"}));
         JSONObject keywords=new JSONObject();
         keywords.put("buyers",new DiscoveryData(store).get("buyer_keywords").optJSONArray("keywords"));
         keywords.put("groups",new DiscoveryData(store).get("group_keywords").optJSONArray("keywords"));
@@ -36,10 +37,13 @@ final class LocalBackup {
         JSONArray records=root.getJSONArray("records"),drafts=root.getJSONArray("drafts"),groups=root.getJSONArray("groups");
         JSONArray imported=root.optJSONArray("imported_groups");
         if(imported==null)imported=new JSONArray();
+        JSONArray webSources=root.optJSONArray("imported_web_sources");
+        if(webSources==null)webSources=new JSONArray();
+        if(webSources.length()>DiscoveryData.MAX_IMPORTED_SOURCES)throw new IOException("منابع وب در پشتیبان بیش از حد است.");
         JSONObject keywords=root.optJSONObject("search_keywords");
         if(keywords==null)keywords=new JSONObject();
         JSONArray buyerWords=keywords.optJSONArray("buyers"),groupWords=keywords.optJSONArray("groups");
-        if(records.length()+drafts.length()+groups.length()+imported.length()>100000)throw new IOException();
+        if(records.length()+drafts.length()+groups.length()+imported.length()+webSources.length()>100000)throw new IOException();
         int count=0;SQLiteDatabase db=store.getWritableDatabase();db.beginTransaction();
         try {
             for(int i=0;i<records.length();i++) {
@@ -73,6 +77,21 @@ final class LocalBackup {
                 for(String column:new String[]{"lookup_key","title","chat_id","public_link","source","added"})
                     v.put(column,item.optString(column,""));
                 db.insertWithOnConflict("imported_groups",null,v,SQLiteDatabase.CONFLICT_IGNORE);
+            }
+            int knownWebSources=(int)new DiscoveryData(store).importedSourceCount();
+            for(int i=0;i<webSources.length();i++) {
+                JSONObject row=webSources.getJSONObject(i);
+                String url;
+                try{url=PublicHttp.validate(row.getString("url"),null);}
+                catch(Exception invalid){throw new IOException("منبع وب در پشتیبان معتبر نیست.",invalid);}
+                String title=row.optString("title","");
+                if(title.length()>240)throw new IOException("عنوان منبع بیش از حد است.");
+                if(knownWebSources>=DiscoveryData.MAX_IMPORTED_SOURCES)break;
+                ContentValues v=new ContentValues();
+                v.put("url",url);v.put("title",title);
+                v.put("added",row.optLong("added",System.currentTimeMillis()));
+                if(db.insertWithOnConflict("imported_web_sources",null,v,
+                        SQLiteDatabase.CONFLICT_IGNORE)!=-1)knownWebSources++;
             }
             if(buyerWords!=null){
                 java.util.List<String> words=new java.util.ArrayList<>();

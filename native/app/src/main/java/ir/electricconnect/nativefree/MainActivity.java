@@ -206,12 +206,17 @@ public final class MainActivity extends Activity {
     super.onActivityResult(requestCode,resultCode,data);
     if(requestCode==REQUEST_IMPORT_ALL && resultCode==RESULT_OK && data!=null && data.getData()!=null) {
       Uri file=data.getData();
-      toast("در حال خواندن اکسل مخاطبان، شماره‌ها و گروه‌ها...");
+      toast("در حال خواندن منابع وب، مخاطبان و گروه‌ها از اکسل...");
       contactExecutor.execute(()->{
         try(java.io.InputStream in=getContentResolver().openInputStream(file)){
           UnifiedExcelImport.Parsed parsed=UnifiedExcelImport.read(in);
           UnifiedExcelImport.Report imported=UnifiedExcelImport.apply(store,parsed);
-          runOnUiThread(()->{if(!isDestroyed()){toast(imported.describe());draw(0);}});
+          runOnUiThread(()->{if(!isDestroyed()){
+            toast(imported.describe());
+            if(imported.sources>0 && getSharedPreferences("discovery",MODE_PRIVATE)
+                .getBoolean("periodic",false))DiscoveryCoordinator.get(this).start(0,false);
+            draw(0);
+          }});
         }catch(Exception error){
           runOnUiThread(()->{if(!isDestroyed())toast("ورود اکسل انجام نشد: "+error.getMessage()+"؛ اطلاعات قبلی محفوظ است.");});
         }
@@ -344,6 +349,29 @@ public final class MainActivity extends Activity {
       rows.add(new String[]{"گزارش صف",q[1],q[2],q[5],"TDLib",q[3],q[4],
           q[8],q[0],q[6]+"؛ ثبت: "+q[7]+"؛ شناسه پیام: "+q[9],""});
     }
+    // Export imported website sources in the same XLSX shape that the importer
+    // accepts; this also makes source lists portable between devices.
+    for(String[] site:new DiscoveryData(store).importedSourceExport()) {
+      rows.add(new String[]{"منبع وب",site[1],site[0],
+          "سایت عمومی مشتری‌یابی","ورودی اکسل","","",formatTime(Long.parseLong(site[2])),
+          "","در جستجوی دوره‌ای استفاده می‌شود",""});
+    }
+    android.content.SharedPreferences web=getSharedPreferences("discovery",MODE_PRIVATE);
+    android.content.SharedPreferences telegram=TelegramBackgroundSchedule.prefs(this);
+    rows.add(new String[]{"وضعیت برنامه","جستجوی وب ۱۵ دقیقه‌ای",
+        web.getBoolean("periodic",false)?"فعال":"خاموش","موتور وب عمومی",
+        "WorkManager","","",formatTime(web.getLong("last_attempt",0)),
+        "","آخرین شماره‌های جدید: "+web.getInt("last_new",0),""});
+    rows.add(new String[]{"وضعیت برنامه","جستجوی گروه‌های تلگرام در پس‌زمینه",
+        TelegramBackgroundSchedule.enabled(this)?"فعال":"خاموش","TDLib عمومی",
+        "حساب شخصیِ ازقبل‌واردشده","","",formatTime(telegram.getLong("last_attempt",0)),
+        "",TelegramBackgroundSchedule.describe(this),""});
+    rows.add(new String[]{"وضعیت برنامه","جستجوی شماره‌های تماس",
+        Long.toString(store.count("records")),"شماره‌های تجاری ذخیره‌شده",
+        "SQLite محلی","","","","","شمارهٔ اعضای تلگرام استخراج نمی‌شود",""});
+    rows.add(new String[]{"وضعیت برنامه","صف پیام‌های تأییدشده",
+        ScheduledQueue.enabled(this)?"فعال":"متوقف","حداقل فاصله ۸ دقیقه",
+        "TDLib","","","","","فقط پیام‌های انتخاب‌شده؛ وضعیت هر پیام در ردیف‌های گزارش صف",""});
     try(Cursor pages=store.getReadableDatabase().rawQuery(
         "SELECT url,state,attempts,updated FROM discovery_urls ORDER BY updated DESC",null)) {
       while(pages.moveToNext())rows.add(new String[]{"نتیجه وب","صفحه عمومی",
@@ -425,20 +453,34 @@ public final class MainActivity extends Activity {
       }
     }
     JSONObject run=DiscoveryCoordinator.get(this).snapshot();
-    return "شماره‌های تجاری ذخیره‌شده: "+store.count("records")+
-        "  | گروه‌های عمومی ذخیره‌شده: "+publicGroups+
-        "  | گروه‌های واردشده: "+new DiscoveryData(store).importedGroupCount()+
-        "\nگروه‌های فعلی حساب TDLib: "+TdlibEngine.get(this).snapshotJoinedGroups().size()+
-        "  | صفحات وب بررسی‌شده: "+donePages+
-        "\nصف: منتظر "+waiting+" | در حال ارسال "+sending+
-        " | پذیرفته‌شده بدون تأیید "+submitted+
-        "\nتأیید ارسال تلگرام: "+confirmed+" | ناموفق: "+failed+
-        " | نامشخص: "+unknown+
-        "\nآخرین کاوش: "+formatTime(run.optLong("updated",0))+
-        " | شماره جدید این اجرا: "+run.optInt("saved")+
-        " | گروه جدید: "+run.optInt("groups")+
-        " | خطا: "+run.optInt("errors")+
-        "\nآمار هر ۵ ثانیه هنگام باز بودن صفحه از داده‌های واقعی تازه می‌شود.";
+    JSONObject webRun=DiscoveryCoordinator.webBackground(this).snapshot();
+    JSONObject groupRun=DiscoveryCoordinator.telegramBackground(this).snapshot();
+    android.content.SharedPreferences web=getSharedPreferences("discovery",MODE_PRIVATE);
+    String webMode=web.getBoolean("periodic",false)?"فعال، برنامه‌ریزی تقریبی ۱۵ دقیقه":"خاموش";
+    return "۱. جستجوی وب: "+webMode+
+        " | آخرین تلاش: "+formatTime(web.getLong("last_attempt",0))+
+        "\n   آخرین جستجوی سریع: "+formatTime(web.getLong("fast_web_last_started",0))+
+        " | سرویس: "+ActiveWebSearchService.status(this)+
+        "\n   سایت‌های واردشده: "+new DiscoveryData(store).importedSourceCount()+
+        " | صفحات بررسی‌شده: "+donePages+
+        "\n   اجرای مستقل وب: "+webRun.optString("state","آماده")+
+        " | صفحات آخرین نوبت: "+webRun.optInt("pages")+
+        " | خطا: "+webRun.optInt("errors")+
+        "\n۲. جستجوی گروه‌های عمومی تلگرام در پس‌زمینه: "+
+            TelegramBackgroundSchedule.describe(this)+
+        "\n   گروه‌های کشف‌شده: "+publicGroups+
+        " | گروه‌های اکسل: "+new DiscoveryData(store).importedGroupCount()+
+        "\n   اجرای مستقل تلگرام: "+groupRun.optString("state","آماده")+
+        " | گروه‌های جدید آخرین نوبت: "+groupRun.optInt("groups")+
+        "\n۳. جستجوی شماره تماس شرکت‌ها: "+store.count("records")+" شماره ذخیره‌شده"+
+        " | شمارهٔ جدید در آخرین کاوش وب مستقل: "+webRun.optInt("saved")+
+        "\n۴. صف پیام‌های تأییدشده: "+(ScheduledQueue.enabled(this)?"فعال":"متوقف")+
+        " | منتظر: "+waiting+" | در حال ارسال: "+sending+
+        "\n   پذیرفته‌شده: "+submitted+" | تأییدشده: "+confirmed+
+        " | ناموفق: "+failed+" | نامشخص: "+unknown+
+        "\nآخرین اجرای موتور کاوش: "+formatTime(run.optLong("updated",0))+
+        " | خطاها: "+run.optInt("errors")+
+        "\nوضعیت‌ها از بانک خود گوشی خوانده و هنگام بازبودن صفحه هر ۵ ثانیه تازه می‌شوند.";
   }
 
   /** Explicit on-device synchronisation; never starts or resumes the message sender. */
@@ -561,6 +603,8 @@ public final class MainActivity extends Activity {
     line("کلیدواژه‌های مشتری‌یابی از Excel");
     note("فایل XLSX را مستقیم انتخاب کنید: ستون «کلیدواژه» یا ستون اول، هر ردیف یک عبارت؛ حداکثر ۵۰ عبارت. متن پیمانکار، مجری و پروژه وارد کنید. عبارت‌های محصول و تولیدکننده پذیرفته نمی‌شوند.");
     button("ورود مستقیم کلیدواژه‌ها از Excel",this::requestKeywordImport);
+    button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
+    note("تعداد منابع واردشده: "+new DiscoveryData(store).importedSourceCount()+" | فایل XLSX با ستون «آدرس سایت» یا URL.");
     List<String> imported=LeadKeywords.imported(new DiscoveryData(store));
     note(imported.isEmpty()?"۱۰ موضوع آمادهٔ خریداران فعال است؛ کلیدواژه‌های اکسل به آن‌ها اضافه می‌شوند.":
         "کلیدواژه‌های واردشده (در جست‌وجوی بعدی فعال):\n"+android.text.TextUtils.join("، ",imported));
@@ -595,6 +639,8 @@ public final class MainActivity extends Activity {
     card(hero);
 
     button("شروع جستجوی مشتریان و گروه‌ها",this::startSalesDiscovery);
+    button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
+    button("خروجی کامل Excel: شماره‌ها، گروه‌ها، منابع و وضعیت",this::requestCombinedXlsxExport);
 
     LinearLayout automaticCard=newCard();
     automaticCard.addView(text("جستجوی خودکار وب هر ۱۵ دقیقه",17,true));
@@ -605,8 +651,29 @@ public final class MainActivity extends Activity {
         .getBoolean("periodic",true));
     webToggle.setOnCheckedChangeListener((v,enabled)->setAutomaticDiscovery(enabled));
     automaticCard.addView(webToggle);
-    automaticCard.addView(text("هر ۱۵ دقیقه یک نوبت وب‌گردی برنامه‌ریزی می‌شود. وقتی صف پیام فعال باشد، بین ارسال‌های ۸ دقیقه‌ای هم جستجوی وب انجام می‌شود. زمان دقیق در اندروید تضمین نمی‌شود.",12,false));
+    automaticCard.addView(text("پس از فعال‌سازی یک جستجوی فوری درخواست می‌شود؛ سپس تقریباً هر ۱۵ دقیقه. حداکثر ۳ سایت مستقل هم‌زمان بررسی می‌شوند و صفحات تماس اولویت دارند. منابع Excel هم چرخشی پردازش می‌شوند. زمان دقیق به اندروید بستگی دارد.",12,false));
     card(automaticCard);
+    LinearLayout activeCard=newCard();
+    activeCard.addView(text("جستجوی فعال وب هر ۳ دقیقه",17,true));
+    activeCard.addView(text("فقط با شروع دستی، با اعلان قابل توقف و حداکثر ۵ ساعت در هر جلسه؛ Android 15 سقف مشترک ۶ ساعت در هر ۲۴ ساعت دارد. صف و تلگرام مستقل هستند.",12,false));
+    ElectricUi.addBlock(this,activeCard,ElectricUi.button(this,
+        "شروع جستجوی فعال",this::startActiveWebSearch),7);
+    ElectricUi.addBlock(this,activeCard,ElectricUi.button(this,
+        "توقف جستجوی فعال",this::stopActiveWebSearch,true,false),7);
+    card(activeCard);
+
+    LinearLayout telegramCard=newCard();
+    telegramCard.addView(text("جستجوی خودکار گروه‌های تلگرام",17,true));
+    CheckBox telegramToggle=new CheckBox(this);
+    telegramToggle.setText("در پس‌زمینه حتی وقتی برنامه باز نیست");
+    telegramToggle.setMinHeight(dp(52));
+    telegramToggle.setChecked(TelegramBackgroundSchedule.enabled(this));
+    telegramToggle.setOnCheckedChangeListener((v,enabled)->setBackgroundTelegram(enabled));
+    telegramCard.addView(telegramToggle);
+    telegramCard.addView(text(
+        "با اجازهٔ شما و حساب آمادهٔ TDLib، اولین جستجوی گروه عمومی فوراً در صف قرار می‌گیرد؛ سپس تقریباً هر ۱۵ دقیقه یک عبارت بررسی می‌شود. زمان دقیق به اندروید بستگی دارد. عضویت و ارسال خودکار انجام نمی‌شود.",
+        12,false));
+    card(telegramCard);
 
     LinearLayout stats=ElectricUi.row(this);
     LinearLayout contactStat=newCard();
@@ -623,7 +690,8 @@ public final class MainActivity extends Activity {
     stats.addView(groupStat,groupWidth);
     ElectricUi.addBlock(this,page,stats,12);
 
-    ElectricUi.section(this,page,"جستجوی وب ۱۵ دقیقه‌ای + صف ۸ دقیقه‌ای",null);
+    note("منابع وب واردشده با اکسل: "+new DiscoveryData(store).importedSourceCount()+" سایت");
+    ElectricUi.section(this,page,"جستجوی مستقل وب و تلگرام، جدا از صف پیام",null);
     int waitingMessages=0;
     for(JSONObject item:ScheduledQueue.snapshot(getApplicationContext()))
       if("PENDING".equals(item.optString("status")))waitingMessages++;
@@ -639,26 +707,72 @@ public final class MainActivity extends Activity {
         "فقط پیام‌هایی که خودت تأیید کرده‌ای",this::openScheduledQueue);
 
     LinearLayout statusCard=newCard();
+    statusCard.addView(text("وضعیت چهار بخش",17,true));
+    liveStatus=ElectricUi.text(this,liveSummary(),12,ElectricUi.INK,false);
+    ElectricUi.addBlock(this,statusCard,liveStatus,6);
     statusCard.addView(text("گزارش جستجو",17,true));
     discoveryUi=new DiscoveryUi(this,statusCard,null,true);
     card(statusCard);
-    note("جستجوی وب مستقل و خودکار است؛ فقط صف پیام‌های ازقبل‌تأییدشده می‌تواند با فاصلهٔ حداقل ۸ دقیقه ارسال کند.");
+    note("موتور وب و شماره‌های تجاری، موتور گروه‌های عمومی تلگرام و صف پیام سه بخش جدا هستند؛ کشف اطلاعات هیچ پیام یا عضویتی ایجاد نمی‌کند.");
+  }
+
+  /** Starts only after a visible user tap; never from a worker or boot. */
+  private void startActiveWebSearch() {
+    if(android.os.Build.VERSION.SDK_INT>=33
+        && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+            !=android.content.pm.PackageManager.PERMISSION_GRANTED) {
+      requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},5193);
+      return;
+    }
+    try {
+      startForegroundService(new Intent(this,ActiveWebSearchService.class)
+          .setAction(ActiveWebSearchService.ACTION_START));
+      toast("درخواست جستجوی فعال ثبت شد؛ اعلان را بررسی کن.");
+    } catch(RuntimeException e) {toast("اندروید اجازهٔ شروع سرویس را نداد.");}
+  }
+  @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results) {
+    super.onRequestPermissionsResult(code,permissions,results);
+    if(code==5193) {
+      if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)
+        startActiveWebSearch();
+      else toast("برای اعلان قابل توقف، اجازهٔ اعلان لازم است.");
+    }
+  }
+  private void stopActiveWebSearch() {
+    try {
+      if(ActiveWebSearchService.enabled(this))
+        startService(new Intent(this,ActiveWebSearchService.class)
+            .setAction(ActiveWebSearchService.ACTION_STOP));
+      else stopService(new Intent(this,ActiveWebSearchService.class));
+      toast("توقف سرویس فعال درخواست شد.");
+    } catch(RuntimeException error) {
+      stopService(new Intent(this,ActiveWebSearchService.class));
+    }
+  }
+  private void setBackgroundTelegram(boolean enabled) {
+    TelegramBackgroundSchedule.setEnabled(this,enabled);
+    if(enabled && !TdlibEngine.get(this).hasCredentials())
+      toast("زمان‌بندی روشن شد؛ برای جستجوی تلگرام ابتدا در بخش اتصال تلگرام وارد حساب شوید.");
+    else toast(enabled?"اولین کاوش گروه‌ها در صف فوری قرار گرفت؛ سپس بررسی دوره‌ای انجام می‌شود. اجرای دقیق به اندروید بستگی دارد.":
+        "جستجوی پس‌زمینهٔ تلگرام خاموش شد؛ گروه‌های ذخیره‌شده محفوظ‌اند.");
+    if(liveStatus!=null)liveStatus.setText(liveSummary());
   }
 
   private void setAutomaticDiscovery(boolean enabled) {
     android.content.SharedPreferences preferences=getSharedPreferences("discovery",MODE_PRIVATE);
-    preferences.edit().putBoolean("sales_auto_enabled",enabled).putInt("scope",2).apply();
+    preferences.edit().putBoolean("sales_auto_enabled",enabled).apply();
     if(enabled) {
       preferences.edit().putLong("sales_auto_started",0).apply();
       DiscoverySchedule.enable(this);
       ((DiscoveryApplication)getApplication()).maybeAutoDiscover();
       if(ScheduledQueue.enabled(this))QueueGapDiscovery.scheduleWeb(this);
-      toast("جستجوی وب با فاصلهٔ تقریبی ۱۵ دقیقه فعال شد؛ در فاصلهٔ پیام‌های تأییدشده هم بررسی می‌شود.");
+      toast("جستجوی فوری وب درخواست شد؛ سپس حدود هر ۱۵ دقیقه منابع بررسی می‌شوند و صفحات تماس اولویت دارند.");
     } else {
       DiscoverySchedule.disable(this);
-      QueueGapDiscovery.cancel(this);
-      DiscoveryCoordinator.get(this).stopByUser();
-      toast("جستجوی خودکار خاموش شد. اطلاعات قبلی محفوظ‌اند.");
+      stopActiveWebSearch();
+      // Switching off WEB must not cancel unrelated Telegram group discovery.
+      DiscoveryCoordinator.webBackground(this).stop();
+      toast("جستجوی خودکار وب خاموش شد. جستجوی تلگرام جداگانه کنترل می‌شود و اطلاعات قبلی محفوظ‌اند.");
     }
   }
 
@@ -678,6 +792,8 @@ public final class MainActivity extends Activity {
     quickAction("◈","گروه‌های تلگرام",
         "جستجوی گروه‌های عمومی و مرور حساب",this::openTelegramBrowser);
     button("ورودی یکجای اکسل",this::requestUnifiedImport);
+    button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
+    note("برای منابع وب: ستون «آدرس سایت» یا URL و در صورت تمایل «نام شرکت». هر ردیف یک نشانی عمومی https:// بدون رمز، لینک تلگرام یا پارامتر. منابع در جستجوی خودکار اضافه می‌شوند.");
     note("کشف فقط از منابع عمومی انجام می‌شود؛ نتایج بدون منبع معتبر وارد بانک نمی‌شوند. هیچ پیامی خودکار ارسال نمی‌شود.");
   }
 
@@ -842,6 +958,15 @@ public final class MainActivity extends Activity {
     card(info);
     quickAction("◎","تحقیق تکمیلی اختیاری","تنظیم کلید شخصی Exa؛ برای کشف پایه لازم نیست",this::openExa);
     button("منابع عمومی اختیاری",()->DiscoveryUi.sources(this));
+    button("ورود منابع سایت از اکسل",this::requestUnifiedImport);
+    button("خروجی کامل Excel: شماره‌ها، گروه‌ها، منابع و وضعیت",this::requestCombinedXlsxExport);
+    CheckBox telegramBackground=new CheckBox(this);
+    telegramBackground.setText("جستجوی خودکار گروه‌های تلگرام در پس‌زمینه");
+    telegramBackground.setMinHeight(dp(52));
+    telegramBackground.setChecked(TelegramBackgroundSchedule.enabled(this));
+    telegramBackground.setOnCheckedChangeListener((v,on)->setBackgroundTelegram(on));
+    page.addView(telegramBackground);
+    note("مستقل از جستجوی وب است. نیاز به یک‌بار ورود به حساب تلگرام دارد؛ هر بار یک عبارت گروه عمومی بدون ارسال پیام بررسی می‌شود.");
     button("ورود مستقیم کلیدواژه‌ها از Excel",this::requestKeywordImport);
 
     CheckBox automatic=new CheckBox(this);
@@ -851,7 +976,10 @@ public final class MainActivity extends Activity {
         .getBoolean("periodic",true));
     automatic.setOnCheckedChangeListener((v,on)->setAutomaticDiscovery(on));
     page.addView(automatic);
-    note("در حالت روشن، جستجوی وب عمومی به‌صورت تقریبی هر ۱۵ دقیقه انجام می‌شود و در فاصلهٔ نوبت‌های صف پیام هم ادامه می‌یابد. جستجوی گروه‌های تلگرام فقط با حساب آماده و برنامهٔ باز انجام می‌شود.");
+    note("موتور مستقل وب و شماره‌یاب در پس‌زمینه با WorkManager اجرا می‌شود؛ اجرای دقیق چرخهٔ ۱۵ دقیقه‌ای تضمین نمی‌شود. موتور گروه‌های عمومی تلگرام نیز مستقل است و به حساب TDLib قبلاً واردشده نیاز دارد.");
+    note("حالت جستجوی فعال: "+ActiveWebSearchService.status(this));
+    button("شروع جستجوی فعال با اعلان",this::startActiveWebSearch);
+    button("توقف جستجوی فعال",this::stopActiveWebSearch);
     button("تنظیمات منابع و محدودیت جستجو",()->DiscoveryUi.sources(this));
     android.content.SharedPreferences schedule=getSharedPreferences("discovery",MODE_PRIVATE);
     note("آخرین تلاش: "+formatTime(schedule.getLong("last_attempt",0))+" | آخرین دریافت موفق: "+formatTime(schedule.getLong("last_success",0))+" | شمارهٔ جدید: "+schedule.getInt("last_new",0));
@@ -886,12 +1014,13 @@ public final class MainActivity extends Activity {
     }
   }
   static final class Store extends SQLiteOpenHelper {
-    Store(Context context) {super(context, "electric_connect_native_free.db", null, 4);}
+    Store(Context context) {super(context, "electric_connect_native_free.db", null, 6);}
     @Override public void onCreate(SQLiteDatabase db) {
-      db.execSQL("CREATE TABLE records (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', search_text TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, UNIQUE(title, phone))");
+      db.execSQL("CREATE TABLE records (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', search_text TEXT NOT NULL DEFAULT '', canonical_phone TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, UNIQUE(title, phone))");
       db.execSQL("CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT, destination TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'DRAFT', created INTEGER NOT NULL)");
       db.execSQL("CREATE INDEX idx_record_title ON records(title)");
       db.execSQL("CREATE INDEX idx_record_category ON records(category)");
+      db.execSQL("CREATE INDEX idx_record_canonical_phone ON records(canonical_phone)");
       db.execSQL("CREATE INDEX idx_drafts_created ON drafts(created)");
       addDiscoveryColumns(db);
       DiscoveryData.create(db);
@@ -910,6 +1039,22 @@ public final class MainActivity extends Activity {
       }
       if(oldVersion<3) {addDiscoveryColumns(db);DiscoveryData.create(db);}
       if(oldVersion<4) DiscoveryData.create(db);
+      if(oldVersion<5) DiscoveryData.create(db);
+      if(oldVersion<6) {
+        // Preserve every legacy row, including differently formatted duplicate phones.
+        // Only add a non-unique index, so migrations never discard user data.
+        db.execSQL("ALTER TABLE records ADD COLUMN canonical_phone TEXT NOT NULL DEFAULT ''");
+        try(Cursor cursor=db.rawQuery("SELECT id,phone FROM records WHERE phone<>''",null)) {
+          while(cursor.moveToNext()) {
+            String canonical=PublicPhoneDiscovery.normalizeIranPhone(cursor.getString(1));
+            if(canonical==null)continue;
+            ContentValues values=new ContentValues();
+            values.put("canonical_phone",canonical);
+            db.update("records",values,"id=?",new String[]{Long.toString(cursor.getLong(0))});
+          }
+        }
+        db.execSQL("CREATE INDEX idx_record_canonical_phone ON records(canonical_phone)");
+      }
     }
     private static void addDiscoveryColumns(SQLiteDatabase db) {
       db.execSQL("ALTER TABLE records ADD COLUMN provider TEXT NOT NULL DEFAULT 'قدیمی / دستی'");
@@ -934,12 +1079,12 @@ public final class MainActivity extends Activity {
           || PublicPhoneDiscovery.canonicalSource(source)==null)return false;
       SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
       try {
+      // Indexed lookup rather than re-normalizing the entire historic database
+      // for every newly discovered business number.
       try(Cursor cursor=db.rawQuery(
-          "SELECT phone FROM records WHERE phone <> ''",null)){
-        while(cursor.moveToNext()){
-          if(canonical.equals(PublicPhoneDiscovery.normalizeIranPhone(cursor.getString(0))))
-            return false;
-        }
+          "SELECT 1 FROM records WHERE canonical_phone=? LIMIT 1",
+          new String[]{canonical})) {
+        if(cursor.moveToFirst())return false;
       }
       boolean inserted=insertRecord(title.trim(),canonical,"تلفن عمومی کسب‌وکار صنعت برق",source);
       if(inserted) {
@@ -953,6 +1098,8 @@ public final class MainActivity extends Activity {
     boolean insertRecord(String title,String phone,String category,String source) {
       ContentValues values = new ContentValues();
       values.put("title",title);values.put("phone",phone);
+      String canonical=PublicPhoneDiscovery.normalizeIranPhone(phone);
+      values.put("canonical_phone",canonical==null?"":canonical);
       values.put("category",category);values.put("source",source);
       values.put("search_text", SearchText.normalize(title + " " + phone + " " + category + " " + source));
       values.put("created",System.currentTimeMillis());
@@ -992,7 +1139,7 @@ public final class MainActivity extends Activity {
     void deleteDraft(long id) {getWritableDatabase().delete("drafts","id=?",new String[]{Long.toString(id)});}
     void clearAll() {
       SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
-      try {db.delete("records",null,null);db.delete("drafts",null,null);db.delete("public_groups",null,null);db.delete("imported_groups",null,null);db.delete("discovery_urls",null,null);db.delete("discovery_state",null,null);db.setTransactionSuccessful();}
+      try {db.delete("records",null,null);db.delete("drafts",null,null);db.delete("public_groups",null,null);db.delete("imported_groups",null,null);db.delete("imported_web_sources",null,null);db.delete("discovery_urls",null,null);db.delete("discovery_state",null,null);db.setTransactionSuccessful();}
       finally {db.endTransaction();}
     }
   }

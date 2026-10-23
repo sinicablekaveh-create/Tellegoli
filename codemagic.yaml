@@ -1,10 +1,10 @@
 # Build on Codemagic's personal macOS M2 free tier (separate from GitHub Actions).
 # No Telegram api_hash, session, signing key or private data is needed.
-# Standalone debug-signed Tellegoli application with its own Android package.
+# Build an independent sandbox APK so previously installed Electric Connect and Tellegoli remain untouched.
 # Do not embed personal Telegram/Exa secrets in the public repository.
 workflows:
   electric-connect-0102-android:
-    name: Tellegoli 0.11.0 - 15min web discovery and approved 8min queue
+    name: Tellegoli 0.12.0 - 4 modules, background Telegram, Excel status
     instance_type: mac_mini_m2
     max_build_duration: 90
     environment:
@@ -33,14 +33,14 @@ workflows:
           echo "Using Android SDK manager: $SDKMANAGER"
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null || true
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-35" "build-tools;35.0.0"
-      - name: Test, lint and build standalone Tellegoli APK
+      - name: Test four modules, lint and build one standalone Tellegoli APK
         script: |
           set -euo pipefail
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
           env -u EC_SIGNING_STORE -u EC_SIGNING_PASSWORD -u EC_SIGNING_ALIAS \
             "$CM_BUILD_DIR/.ci-gradle/gradle-8.11.1/bin/gradle" \
             --no-daemon -p native \
-            testDebugUnitTest lintDebug assembleDebug
+            -PecStandaloneTest=true testDebugUnitTest lintDebug assembleDebug
       - name: Verify APK version, Android signature, native TDLib and checksum
         script: |
           set -euo pipefail
@@ -48,15 +48,15 @@ workflows:
           APK="native/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           mkdir -p dist-codemagic
-          bash native/scripts/verify-apk.sh "$APK" dist-codemagic normal
+          bash native/scripts/verify-apk.sh "$APK" dist-codemagic sandbox
           cp "$APK" dist-codemagic/tellegoli.apk
           # Publish one unambiguous installable APK, not several identical copies.
-          rm -f dist-codemagic/Tellegoli_0.11.0.apk
+          rm -f dist-codemagic/Tellegoli_0.12.0_Sandbox.apk
           (cd dist-codemagic && shasum -a 256 tellegoli.apk > SHA256SUMS.txt)
           git rev-parse HEAD > dist-codemagic/SOURCE-COMMIT.txt
-          printf '%s\n' 'Tellegoli 0.11.0 debug-signed APK. Live queue delivery not verified on a device.' \
-            'The original Electric Connect app can remain installed; Tellegoli uses a separate app ID.' \
-            'Back up Contacts XLSX and Telegram session data before uninstalling; cloud debug certificates may change.' \
+          printf '%s\n' 'Tellegoli 0.12.0 sandbox debug-signed APK: independent install, not an upgrade to an existing app.' \
+            'Android package: ir.electricconnect.tellegoli.sandbox; existing Electric Connect or Tellegoli installs are untouched.' \
+            'This separate app has its own data and Telegram login; test background scheduling and TDLib on a real device.' \
             > dist-codemagic/READ-FIRST.txt
     artifacts:
       - dist-codemagic/*.apk

@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Requested only when a user explicitly starts the notification-backed service. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Network used for user-initiated Exa searches, Bot API tests and TDLib account session. -->
     <application
         android:name=".DiscoveryApplication"
@@ -12,6 +16,10 @@
         android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- Explicit foreground user action only; never start from BOOT_COMPLETED. -->
+        <service android:name=".ActiveWebSearchService"
+            android:exported="false" android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
         <activity android:name=".ExaResearchActivity" android:exported="false" />
         <activity android:name=".TelegramTestActivity" android:exported="false" />
         <activity android:name=".TdlibAccountActivity" android:exported="false" />

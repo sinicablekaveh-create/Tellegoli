@@ -25,6 +25,8 @@ public class IndependentDiscoveryTest {
     private Context app;private MainActivity.Store store;private DiscoveryData data;
     @Before public void setup() {
         ReflectionHelpers.setStaticField(DiscoveryCoordinator.class,"shared",null);
+        ReflectionHelpers.setStaticField(DiscoveryCoordinator.class,"webBackground",null);
+        ReflectionHelpers.setStaticField(DiscoveryCoordinator.class,"telegramBackground",null);
         app=RuntimeEnvironment.getApplication();app.deleteDatabase("electric_connect_native_free.db");
         app.getSharedPreferences("exa_ui_settings",0).edit().clear().commit();
         store=new MainActivity.Store(app);data=new DiscoveryData(store);
@@ -78,6 +80,137 @@ public class IndependentDiscoveryTest {
         for(String url:requested)assertTrue(url,url.startsWith("https://freshbuyer.example/"));
     }
 
+
+    @Test public void completedDefaultSiteNeverConsumesNewExcelSiteHostSlot()throws Exception {
+        DiscoveryCoordinator.Run r=run();
+        r.seeds.clear();
+        r.maxHosts=1;
+        r.maxPages=1;
+        String done="https://finished-buyer.example/";
+        String fresh="https://fresh-from-excel.example/";
+        r.seeds.add(done);
+        r.seeds.add(fresh);
+        assertTrue(data.queue(done));
+        data.finishUrl(done,"done");
+        List<String> calls=new ArrayList<>();
+        new PublicWebsiteContactsProvider((url,hosts)->{
+            calls.add(url);
+            return page(200,url.endsWith("robots.txt")?"User-agent: *\\nAllow: /":
+                html("02156519931"),url.endsWith("robots.txt")?"text/plain":"text/html");
+        }).discover(r);
+        assertEquals(1,r.saved);
+        assertEquals(1,r.pages);
+        assertFalse(calls.isEmpty());
+        for(String url:calls)assertTrue("Must scan fresh buyer, not completed seed: "+url,
+            url.startsWith(fresh));
+    }
+
+    @Test public void selectedExcelHostCanScanPastAnOldHundredUrlBacklog()throws Exception {
+        for(int i=0;i<140;i++)assertTrue(data.queue(
+            "https://previous"+i+".example/contact"));
+        String fresh="https://fresh-excel.example/";
+        DiscoveryCoordinator.Run r=run();
+        r.seeds.clear();r.seeds.add(fresh);r.maxHosts=1;r.maxPages=1;
+        new PublicWebsiteContactsProvider((url,hosts)->page(200,
+            url.endsWith("robots.txt")?"User-agent: *\\nAllow: /":html("02156519931"),
+            url.endsWith("robots.txt")?"text/plain":"text/html")).discover(r);
+        assertEquals(1,r.saved);
+        assertEquals(fresh,store.find("02156519931",0,10).get(0).source);
+        assertEquals(1,r.pages);
+        assertTrue(data.total("discovery_urls")>=141); // Bundled fallback sites may be queued too.
+    }
+
+
+    @Test public void anExcelWebsiteContactLinkStillExpandsWithOldPendingBacklog()throws Exception {
+        for(int i=0;i<120;i++)data.queue("https://old-site"+i+".example/contact");
+        DiscoveryCoordinator.Run r=run();
+        r.seeds.clear();
+        r.seeds.add("https://fresh-link.example/");
+        r.maxHosts=1;r.maxPages=2;
+        new PublicWebsiteContactsProvider((url,hosts)->{
+            if(url.endsWith("robots.txt"))
+                return page(200,"User-agent: *\\nAllow: /","text/plain");
+            if(url.endsWith("/contact"))
+                return page(200,html("02156519931"),"text/html");
+            return page(200,"<title>شرکت پیمانکار برق صنعتی</title>"
+                +"<a href='/contact'>تماس با ما</a>","text/html");
+        }).discover(r);
+        assertEquals(2,r.pages);
+        assertEquals(1,r.saved);
+        assertEquals("https://fresh-link.example/contact",
+            store.find("02156519931",0,10).get(0).source);
+    }
+
+
+    @Test public void importedExcelWebsitesReceiveHostSlotsDespiteLiveSearchResults()throws Exception {
+        UnifiedExcelImport.Parsed input=new UnifiedExcelImport.Parsed();
+        input.sources.add(new UnifiedExcelImport.WebSource(
+            "https://buyer-imported.example/contact","مجری برق آزمون"));
+        assertEquals(1,UnifiedExcelImport.apply(store,input).sources);
+        DiscoveryCoordinator.Run pass=run();
+        pass.seeds.clear();
+        pass.seeds.add("https://new-search-result.example/");
+        pass.maxHosts=1;pass.maxPages=1;
+        List<String> fetched=new ArrayList<>();
+        new PublicWebsiteContactsProvider((url,hosts)->{
+            fetched.add(url);
+            return page(200,url.endsWith("robots.txt")?"User-agent: *\\nAllow: /":
+                    html("02156519931"),
+                url.endsWith("robots.txt")?"text/plain":"text/html");
+        }).discover(pass);
+        assertEquals(1,pass.saved);
+        assertEquals("https://buyer-imported.example/contact",
+            store.find("02156519931",0,10).get(0).source);
+        for(String url:fetched)assertTrue("User Excel source is selected: "+url,
+            url.startsWith("https://buyer-imported.example/"));
+    }
+
+    @Test public void contactPagesArePrioritizedWithinTheSamePublicHost() {
+        String host="buyer-priority.example";
+        String services="https://"+host+"/services";
+        String contact="https://"+host+"/contact";
+        assertTrue(data.queue(services));
+        assertTrue(data.queue(contact));
+        assertEquals(Arrays.asList(contact,services),
+            data.pendingForHosts(Collections.singleton(host),10));
+        data.finishUrl(contact,"done");
+        assertEquals(Collections.singletonList(services),
+            data.pendingForHosts(Collections.singleton(host),10));
+    }
+
+    @Test public void twoIndependentPublicSitesScanConcurrentlyWithoutParallelRequestsToOneSite()throws Exception {
+        DiscoveryCoordinator.Run pass=run();
+        pass.seeds.clear();
+        pass.seeds.add("https://first-buyer.example/");
+        pass.seeds.add("https://second-buyer.example/");
+        pass.maxHosts=2;pass.maxPages=1;
+        CountDownLatch bothRobotsRequested=new CountDownLatch(2);
+        java.util.concurrent.ConcurrentHashMap<String,AtomicInteger> perHost=new java.util.concurrent.ConcurrentHashMap<>();
+        PublicWebsiteContactsProvider website=new PublicWebsiteContactsProvider((url,allowed)->{
+            String host=URI.create(url).getHost();
+            perHost.computeIfAbsent(host,key->new AtomicInteger()).incrementAndGet();
+            if(url.endsWith("/robots.txt")) {
+                bothRobotsRequested.countDown();
+                try {
+                    if(!bothRobotsRequested.await(5,TimeUnit.SECONDS))
+                        throw new IOException("Independent websites were not scanned concurrently");
+                } catch(InterruptedException e) {
+                    Thread.currentThread().interrupt();throw new InterruptedIOException();
+                }
+                return page(200,"User-agent: *\\nAllow: /","text/plain");
+            }
+            String phone=host.startsWith("first")?"02156519931":"02156519932";
+            return page(200,html(phone),"text/html");
+        });
+        website.discover(pass);
+        assertEquals(0,pass.errors);
+        assertEquals(2,pass.pages);
+        assertEquals(2,pass.saved);
+        assertEquals(2,store.count("records"));
+        assertEquals(2,perHost.get("first-buyer.example").get());
+        assertEquals(2,perHost.get("second-buyer.example").get());
+    }
+
     @Test public void exa403FallsBackToIndependentSourceWithoutRepeatingPaidRequest()throws Exception {
         AtomicInteger exa=new AtomicInteger();
         DiscoveryCoordinator.Run r=run();
@@ -122,7 +255,10 @@ public class IndependentDiscoveryTest {
                 return page(200,"","text/plain");
             }).discover(first);fail();
         }catch(InterruptedIOException expected){}
-        assertEquals(1,data.pending(10).size());
+        // Extra fallback sources are intentionally queued by the new discovery rotation.
+        // Cancellation must checkpoint THIS source, not require the global queue to contain only one URL.
+        assertEquals(Collections.singletonList("https://cable.example/"),
+            data.pendingForHosts(Collections.singleton("cable.example"),20));
         DiscoveryCoordinator.Run resumed=run();
         new PublicWebsiteContactsProvider((url,hosts)->page(200,url.endsWith("robots.txt")?"":html("02156519931"),url.endsWith("robots.txt")?"text/plain":"text/html")).discover(resumed);
         assertEquals(1,resumed.saved);assertEquals(1,store.count("records"));
@@ -135,16 +271,28 @@ public class IndependentDiscoveryTest {
     @Test public void rateLimitsHaveFiniteRetryCapAndPersistentRetryCheckpoint()throws Exception {
         DiscoveryCoordinator.Run r=run();AtomicInteger calls=new AtomicInteger();
         new PublicWebsiteContactsProvider((url,hosts)->{calls.incrementAndGet();return page(429,"","text/plain");}).discover(r);
-        assertEquals(3,calls.get());assertEquals(1,r.errors);assertEquals(1,data.pending(20).size());
+        assertEquals(3,calls.get());assertEquals(1,r.errors);
+        assertEquals(Collections.singletonList("https://cable.example/"),
+            data.pendingForHosts(Collections.singleton("cable.example"),20));
         JSONObject state=data.get("run");assertEquals(1,state.optInt("errors"));
     }
     @Test public void timeoutDoesNotWipeOldContactsAndCanResumeWithoutRefetchingDoneUrls()throws Exception {
         store.insertRecord("قبلی","02156519930","برق","دستی");DiscoveryCoordinator.Run first=run();
         new PublicWebsiteContactsProvider((url,hosts)->{throw new java.net.SocketTimeoutException();}).discover(first);
-        assertEquals(1,store.count("records"));assertEquals(1,data.pending(20).size());
+        assertEquals(1,store.count("records"));
+        assertEquals(Collections.singletonList("https://cable.example/"),
+            data.pendingForHosts(Collections.singleton("cable.example"),20));
         DiscoveryCoordinator.Run retry=run();new PublicWebsiteContactsProvider((url,hosts)->page(200,url.endsWith("robots.txt")?"":html("02156519931"),url.endsWith("robots.txt")?"text/plain":"text/html")).discover(retry);
-        assertEquals(2,store.count("records"));assertTrue(data.pending(20).isEmpty());
-        AtomicInteger calls=new AtomicInteger();new PublicWebsiteContactsProvider((url,hosts)->{calls.incrementAndGet();throw new IOException();}).discover(run());assertEquals(0,calls.get());
+        assertEquals(2,store.count("records"));
+        assertTrue("Completed source must leave its host queue",
+            data.pendingForHosts(Collections.singleton("cable.example"),20).isEmpty());
+        // A later run may still scan new default fallback hosts. The completed URL must not be refetched.
+        AtomicInteger refetchedCompletedHost=new AtomicInteger();
+        new PublicWebsiteContactsProvider((url,hosts)->{
+            if(url.startsWith("https://cable.example/"))refetchedCompletedHost.incrementAndGet();
+            throw new IOException();
+        }).discover(run());
+        assertEquals(0,refetchedCompletedHost.get());
     }
     @Test public void queueGapRefreshesOldPermittedPagesButNeverDeniedOnes() {
         String allowed="https://cable.example/contact";
@@ -234,12 +382,40 @@ public class IndependentDiscoveryTest {
         assertFalse("Only successful completed scan can clear pending",options.getBoolean("telegram_pending",true));
     }
 
+    @Test public void webAndTelegramDiscoveryRunOnIndependentPersistedEngineSlots() throws Exception {
+        DiscoveryCoordinator web=DiscoveryCoordinator.webBackground(app);
+        DiscoveryCoordinator telegram=DiscoveryCoordinator.telegramBackground(app);
+        DiscoveryCoordinator foreground=DiscoveryCoordinator.get(app);
+        assertNotSame("Web and Telegram must have independent running slots",web,telegram);
+        assertNotSame(web,foreground);
+        assertNotSame(telegram,foreground);
+        assertEquals("run_web",web.progressKey);
+        assertEquals("run_telegram",telegram.progressKey);
+        web.data.put("run_web",new JSONObject().put("state","finished")
+            .put("saved",2).put("pages",4));
+        telegram.data.put("run_telegram",new JSONObject().put("state","finished")
+            .put("groups",3));
+        assertEquals(2,web.snapshot().optInt("saved"));
+        assertEquals(0,web.snapshot().optInt("groups"));
+        assertEquals(3,telegram.snapshot().optInt("groups"));
+        assertEquals(0,telegram.snapshot().optInt("saved"));
+        assertEquals(0,foreground.snapshot().optInt("saved"));
+        assertEquals(0,foreground.snapshot().optInt("groups"));
+        assertNotSame("Independent work must not wait for the other executor",
+            ReflectionHelpers.getField(web,"executor"),
+            ReflectionHelpers.getField(telegram,"executor"));
+    }
+
     @Test public void periodicWebWorkIsQuarterHourlyConstrainedAndOptOutCancelsUniqueWork()throws Exception {
         androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(app);
         app.getSharedPreferences("discovery",0).edit().remove("periodic_15_minutes").commit();
         androidx.work.PeriodicWorkRequest request=DiscoverySchedule.request(app);
         assertEquals(TimeUnit.MINUTES.toMillis(15),request.getWorkSpec().intervalDuration);
         assertEquals(TimeUnit.MINUTES.toMillis(15),request.getWorkSpec().initialDelay);
+        androidx.work.OneTimeWorkRequest firstWeb=DiscoverySchedule.firstRequest();
+        assertEquals(0,firstWeb.getWorkSpec().initialDelay);
+        assertEquals(androidx.work.NetworkType.CONNECTED,
+            firstWeb.getWorkSpec().constraints.getRequiredNetworkType());
         app.getSharedPreferences("discovery",0).edit().putBoolean("periodic_15_minutes",false).commit();
         androidx.work.PeriodicWorkRequest daily=DiscoverySchedule.request(app);
         assertEquals(TimeUnit.HOURS.toMillis(24),daily.getWorkSpec().intervalDuration);
@@ -247,10 +423,114 @@ public class IndependentDiscoveryTest {
         assertEquals(androidx.work.NetworkType.CONNECTED,request.getWorkSpec().constraints.getRequiredNetworkType());assertTrue(request.getWorkSpec().constraints.requiresBatteryNotLow());
         DiscoverySchedule.enable(app);DiscoverySchedule.enable(app);
         assertEquals(1,androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork(DiscoverySchedule.WORK).get().size());
+        assertEquals(1,androidx.work.WorkManager.getInstance(app)
+            .getWorkInfosForUniqueWork(DiscoverySchedule.FIRST_WORK).get().size());
         DiscoverySchedule.disable(app);
         assertFalse(app.getSharedPreferences("discovery",0).getBoolean("periodic",true));
         assertEquals(androidx.work.WorkInfo.State.CANCELLED,androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork(DiscoverySchedule.WORK).get().get(0).getState());
+        assertEquals(androidx.work.WorkInfo.State.CANCELLED,androidx.work.WorkManager.getInstance(app)
+            .getWorkInfosForUniqueWork(DiscoverySchedule.FIRST_WORK).get().get(0).getState());
     }
+
+    @Test public void telegramBackgroundScheduleIsOptInIndependentOfWebAndPersistent()throws Exception {
+        app.getSharedPreferences(TelegramBackgroundSchedule.PREF,0).edit().clear().commit();
+        assertFalse(TelegramBackgroundSchedule.enabled(app));
+        androidx.work.PeriodicWorkRequest periodic=TelegramBackgroundSchedule.request();
+        assertEquals(TimeUnit.MINUTES.toMillis(15),periodic.getWorkSpec().intervalDuration);
+        assertEquals(TimeUnit.MINUTES.toMillis(15),periodic.getWorkSpec().initialDelay);
+        androidx.work.OneTimeWorkRequest first=TelegramBackgroundSchedule.firstRequest();
+        assertEquals(0,first.getWorkSpec().initialDelay);
+        assertEquals(androidx.work.NetworkType.CONNECTED,
+            first.getWorkSpec().constraints.getRequiredNetworkType());
+        assertEquals(androidx.work.NetworkType.CONNECTED,
+            periodic.getWorkSpec().constraints.getRequiredNetworkType());
+        assertTrue(periodic.getWorkSpec().constraints.requiresBatteryNotLow());
+        androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(app);
+        app.getSharedPreferences("discovery",0).edit().putBoolean("periodic",false).commit();
+        TelegramBackgroundSchedule.setEnabled(app,true);
+        TelegramBackgroundSchedule.bootstrap(app);
+        assertTrue(TelegramBackgroundSchedule.enabled(app));
+        assertEquals(1,androidx.work.WorkManager.getInstance(app)
+            .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK).get().size());
+        assertEquals("Enabling Telegram must queue a first scan without waiting 15 minutes",
+            1,androidx.work.WorkManager.getInstance(app)
+                .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK_IMMEDIATE).get().size());
+        assertFalse("Telegram background opt-in must not force on public web",
+            app.getSharedPreferences("discovery",0).getBoolean("periodic",true));
+        TelegramBackgroundSchedule.setEnabled(app,false);
+        assertFalse(TelegramBackgroundSchedule.enabled(app));
+        assertEquals(androidx.work.WorkInfo.State.CANCELLED,
+            androidx.work.WorkManager.getInstance(app)
+                .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK)
+                .get().get(0).getState());
+        assertEquals(androidx.work.WorkInfo.State.CANCELLED,
+            androidx.work.WorkManager.getInstance(app)
+                .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK_IMMEDIATE)
+                .get().get(0).getState());
+        assertFalse("Background Telegram must never run without opt-in",
+            DiscoveryCoordinator.get(app).start(1,true));
+    }
+
+    @Test public void backgroundTelegramSearchesExactlyOnePublicTermAndDoesNotSendMessages()throws Exception {
+        TdlibEngine engine=new TdlibEngine(app);
+        ReflectionHelpers.setField(engine,"loggedIn",true);
+        AtomicInteger searches=new AtomicInteger();
+        AtomicInteger groupDetails=new AtomicInteger();
+        TdlibEngine.Session session=(function,handler)->{
+            if(function instanceof org.drinkless.tdlib.TdApi.SearchPublicChats) {
+                searches.incrementAndGet();
+                org.drinkless.tdlib.TdApi.Chats chats=new org.drinkless.tdlib.TdApi.Chats();
+                chats.chatIds=new long[]{9001};
+                handler.onResult(chats);
+            } else if(function instanceof org.drinkless.tdlib.TdApi.GetChat) {
+                groupDetails.incrementAndGet();
+                org.drinkless.tdlib.TdApi.Chat chat=new org.drinkless.tdlib.TdApi.Chat();
+                chat.id=9001;chat.title="گروه پیمانکاران برق صنعتی";
+                chat.type=new org.drinkless.tdlib.TdApi.ChatTypeBasicGroup();
+                handler.onResult(chat);
+            } else fail("Background search must never send, join or read members: "+
+                function.getClass().getSimpleName());
+        };
+        ReflectionHelpers.setField(engine,"client",session);
+        DiscoveryCoordinator.Run pass=run();
+        pass.scope=1;pass.background=true;pass.telegramBackground=true;
+        ExecutorService worker=Executors.newSingleThreadExecutor();
+        Future<?> job=worker.submit(()->DiscoveryCoordinator.execute(pass,
+            Collections.singletonList(new TelegramPublicGroupProvider(engine))));
+        try {
+            long deadline=System.currentTimeMillis()+9000;
+            while(!job.isDone()&&System.currentTimeMillis()<deadline) {
+                shadowOf(Looper.getMainLooper()).idle();Thread.sleep(20);
+            }
+            job.get(1,TimeUnit.SECONDS);
+            assertEquals("One background search must use just one query",1,searches.get());
+            assertEquals(1,groupDetails.get());
+            assertEquals(1,pass.groups);
+            assertEquals("finished",pass.state);
+            assertEquals(1,data.groups().size());
+            assertEquals(1,data.get("background_telegram_topic_cycle").optInt("next"));
+            assertFalse("Background discovery cannot request foreground login",pass.telegramPending);
+        } finally {pass.cancelled.set(true);worker.shutdownNow();}
+    }
+
+    @Test public void backgroundTelegramSkipsRecentlyCompletedTopicAndAdvancesCursor()throws Exception {
+        String topic=GroupKeywords.all(data).get(0);
+        data.put("telegram:"+topic,new JSONObject().put("success",System.currentTimeMillis()));
+        TdlibEngine engine=new TdlibEngine(app);
+        ReflectionHelpers.setField(engine,"loggedIn",true);
+        ReflectionHelpers.setField(engine,"client",(TdlibEngine.Session)(function,handler)->
+            fail("Freshly checked topic must not trigger Telegram request"));
+        DiscoveryCoordinator.Run pass=run();
+        pass.scope=1;pass.background=true;pass.telegramBackground=true;
+        DiscoveryCoordinator.execute(pass,Collections.singletonList(
+            new TelegramPublicGroupProvider(engine)));
+        assertEquals("finished",pass.state);
+        assertEquals(0,pass.topic);
+        assertEquals(0,pass.groups);
+        assertEquals(1,data.get("background_telegram_topic_cycle").optInt("next"));
+        assertFalse(pass.telegramPending);
+    }
+
     @Test public void telegramProviderUsesOfficialSearchDeduplicatesPersistsAndCancels()throws Exception {
         TdlibEngine engine=new TdlibEngine(app);AtomicInteger searches=new AtomicInteger();
         ReflectionHelpers.setField(engine,"loggedIn",true);

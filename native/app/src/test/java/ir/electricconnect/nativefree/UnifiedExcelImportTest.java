@@ -71,6 +71,106 @@ public class UnifiedExcelImportTest {
             assertTrue(json.contains("برق نیروگاهی"));
         }finally{store.close();}
     }
+
+    @Test public void importsWebSourcesFromExcelWithCanonicalDeduplicationAndRotation()throws Exception {
+        var context=RuntimeEnvironment.getApplication();
+        context.deleteDatabase("electric_connect_native_free.db");
+        byte[] excel=workbook(new String[][]{
+            {"آدرس سایت","نام شرکت"},
+            {"https://buyer-a.example/","پیمانکار برق الف"},
+            {"https://buyer-b.example/","مجری پروژه ب"},
+            {"https://buyer-a.example/","همان نشانی دوباره"},
+            {"https://t.me/publicgroup","کانال تلگرام"},
+            {"http://buyer-c.example/","ناامن"},
+            {"https://localhost/","نشانی خصوصی"}
+        });
+        UnifiedExcelImport.Parsed parsed=UnifiedExcelImport.read(new ByteArrayInputStream(excel));
+        assertEquals(3,parsed.sources.size());
+        assertEquals(3,parsed.rejected);
+        try(MainActivity.Store store=new MainActivity.Store(context)) {
+            UnifiedExcelImport.Report report=UnifiedExcelImport.apply(store,parsed);
+            assertEquals(2,report.sources);
+            assertEquals(2,new DiscoveryData(store).importedSourceCount());
+            assertEquals(parsed.rejected+1,report.rejected); // One duplicate was rejected at apply
+            List<String> rotated=new DiscoveryData(store).rotatedImportedSources(1,2);
+            assertEquals(Arrays.asList("https://buyer-b.example/","https://buyer-a.example/"),rotated);
+            UnifiedExcelImport.Report again=UnifiedExcelImport.apply(store,parsed);
+            assertEquals(0,again.sources);
+            assertEquals(2,new DiscoveryData(store).importedSourceCount());
+        }
+    }
+
+    @Test public void acceptsSingleColumnAndUnifiedReportWebSourcesWithoutTreatingThemAsKeywords()throws Exception {
+        byte[] simple=workbook(new String[][]{
+            {"https://buyer-01.example/contact"},
+            {"https://buyer-02.example/"}
+        });
+        UnifiedExcelImport.Parsed raw=UnifiedExcelImport.read(new ByteArrayInputStream(simple));
+        assertEquals(2,raw.sources.size());
+        assertEquals(0,raw.buyers.size());
+        byte[] report=workbook(new String[][]{
+            {"نوع داده","عنوان","شماره / شناسه / آدرس","منبع"},
+            {"منبع وب","شرکت مجری","https://buyer-03.example/contact","ورودی اکسل"},
+            {"گزارش صف","صف ارسال","0001","TDLib"}
+        });
+        UnifiedExcelImport.Parsed fromReport=UnifiedExcelImport.read(new ByteArrayInputStream(report));
+        assertEquals(1,fromReport.sources.size());
+        assertEquals(0,fromReport.rejected);
+        assertEquals("https://buyer-03.example/contact",fromReport.sources.get(0).url);
+        byte[] common=workbook(new String[][]{
+            {"منبع"},
+            {"https://buyer-04.example/"},
+            {"https://buyer-05.example/projects/"}
+        });
+        assertEquals(2,UnifiedExcelImport.read(new ByteArrayInputStream(common)).sources.size());
+    }
+
+    @Test public void excelSourceBackupRestoreKeepsPreviouslySavedNumbers()throws Exception {
+        var context=RuntimeEnvironment.getApplication();
+        context.deleteDatabase("electric_connect_native_free.db");
+        byte[] backup;
+        try(MainActivity.Store store=new MainActivity.Store(context)){
+            assertTrue(store.insertRecord("مخاطب قبلی","02156519931","برق","دستی"));
+            UnifiedExcelImport.Parsed imported=new UnifiedExcelImport.Parsed();
+            imported.sources.add(new UnifiedExcelImport.WebSource(
+                "https://buyer-storage.example/contact","شرکت مجری"));
+            assertEquals(1,UnifiedExcelImport.apply(store,imported).sources);
+            ByteArrayOutputStream output=new ByteArrayOutputStream();
+            LocalBackup.write(store,output);
+            backup=output.toByteArray();
+            assertTrue(new String(backup,"UTF-8").contains("imported_web_sources"));
+        }
+        context.deleteDatabase("electric_connect_native_free.db");
+        try(MainActivity.Store restored=new MainActivity.Store(context)){
+            assertEquals(1,LocalBackup.restore(restored,new ByteArrayInputStream(backup)));
+            assertEquals(1,restored.count("records"));
+            assertEquals(1,new DiscoveryData(restored).importedSourceCount());
+            assertEquals(0,LocalBackup.restore(restored,new ByteArrayInputStream(backup)));
+            assertEquals(1,new DiscoveryData(restored).importedSourceCount());
+        }
+    }
+
+
+    @Test public void eightImportedSitesRotateWithoutSkippingHalfOfSources()throws Exception {
+        var context=RuntimeEnvironment.getApplication();
+        context.deleteDatabase("electric_connect_native_free.db");
+        try(MainActivity.Store store=new MainActivity.Store(context)) {
+            UnifiedExcelImport.Parsed parsed=new UnifiedExcelImport.Parsed();
+            for(int i=0;i<8;i++)
+                parsed.sources.add(new UnifiedExcelImport.WebSource(
+                    "https://imported-"+i+".example/","پیمانکار "+i));
+            assertEquals(8,UnifiedExcelImport.apply(store,parsed).sources);
+            DiscoveryData data=new DiscoveryData(store);
+            Set<String> covered=new HashSet<>();
+            int cursor=0;
+            for(int run=0;run<4;run++) {
+                covered.addAll(data.rotatedImportedSources(cursor,2));
+                cursor=(cursor+DiscoveryCoordinator.importedCursorStep(4))%8;
+            }
+            assertEquals("Every imported URL must get a scan slot",8,covered.size());
+        }
+    }
+
     @Test public void rejectsUnknownFileBeforeDatabaseWrite()throws Exception{
         try{
             UnifiedExcelImport.read(new ByteArrayInputStream("not an excel file".getBytes("UTF-8")));

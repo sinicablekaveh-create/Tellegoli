@@ -14,22 +14,38 @@ final class DiscoveryCoordinator {
     static final String[] TOPICS={"پیمانکار برق صنعتی","پیمانکار تاسیسات الکتریکی","مجری کابل کشی","برقکار پروژه صنعتی","پیمانکار برق ساختمان","مجری برق سوله","شرکت EPC صنعتی","پیمانکار برق کارخانه","مجری تاسیسات تجاری","پیمانکار برق پروژه"};
     interface Listener {void changed(JSONObject state);}
     private static DiscoveryCoordinator shared;
+    private static DiscoveryCoordinator webBackground;
+    private static DiscoveryCoordinator telegramBackground;
+    /** Global guard: foreground, fast mode and WorkManager must not crawl simultaneously. */
+    private static final AtomicBoolean webScanGate=new AtomicBoolean();
+    /** Distinct persisted tasks: neither background discovery blocks the other. */
+    static synchronized DiscoveryCoordinator webBackground(Context context) {
+        if(webBackground==null)webBackground=new DiscoveryCoordinator(context.getApplicationContext(),"run_web");
+        return webBackground;
+    }
+    static synchronized DiscoveryCoordinator telegramBackground(Context context) {
+        if(telegramBackground==null)telegramBackground=new DiscoveryCoordinator(context.getApplicationContext(),"run_telegram");
+        return telegramBackground;
+    }
     static synchronized DiscoveryCoordinator get(Context context) {
         if(shared==null)shared=new DiscoveryCoordinator(context.getApplicationContext());return shared;
     }
     final Context app;
     final DiscoveryData data;
+    final String progressKey;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private final Set<Listener> listeners=new HashSet<>();
     private volatile Run running;
-    DiscoveryCoordinator(Context app) {
-        this.app=app;data=new DiscoveryData(new MainActivity.Store(app));
+    DiscoveryCoordinator(Context app) {this(app,"run");}
+    private DiscoveryCoordinator(Context app,String progressKey) {
+        this.app=app;this.progressKey=progressKey;
+        data=new DiscoveryData(new MainActivity.Store(app));
     }
     synchronized void attach(Listener listener){listeners.add(listener);listener.changed(snapshot());}
     synchronized void detach(Listener listener){listeners.remove(listener);}
     JSONObject snapshot(){
-        JSONObject saved=data.get("run");
+        JSONObject saved=data.get(progressKey);
         if(running==null&&"running".equals(saved.optString("state"))) {
             try {saved.put("state","interrupted").put("note","اجرا قطع شد؛ برای ادامه شروع را بزنید. نتایج ذخیره شده‌اند.");}catch(Exception ignored){}
         }
@@ -38,28 +54,32 @@ final class DiscoveryCoordinator {
     boolean isRunning(){return running!=null;}
     synchronized boolean start(int scope,boolean background) {
         if(running!=null)return false;
+        if(background && scope==1 && !TelegramBackgroundSchedule.enabled(app))return false;
+        final boolean webScope=scope==0 || scope==2;
+        if(webScope && !webScanGate.compareAndSet(false,true))return false;
         Run run=new Run(data,new AtomicBoolean(),null);
         run.topics=LeadKeywords.all(data);
         run.scope=scope;run.background=background;
         run.queuePass=scope==3;
+        run.telegramBackground=background && scope==1;
         JSONObject previous=snapshot();
-        if(previous.optInt("scope",-1)==scope && (previous.optString("state").equals("interrupted")||previous.optString("state").equals("stopped")||previous.optString("state").equals("waiting"))) {
+        if(!run.telegramBackground && previous.optInt("scope",-1)==scope && (previous.optString("state").equals("interrupted")||previous.optString("state").equals("stopped")||previous.optString("state").equals("waiting"))) {
             run.pages=previous.optInt("pages");run.saved=previous.optInt("saved");run.groups=previous.optInt("groups");run.duplicates=previous.optInt("duplicates");run.errors=previous.optInt("errors");
         }
         running=run;
         // Record the request before a web provider can consume the time budget.
         // READY resumption must also survive web timeouts and process interruption.
-        if(scope==1||scope==2)app.getSharedPreferences("discovery",Context.MODE_PRIVATE)
+        if((scope==1||scope==2) && !run.telegramBackground)
+            app.getSharedPreferences("discovery",Context.MODE_PRIVATE)
             .edit().putBoolean("telegram_pending",true).apply();
         run.changed=()->publish(run);
         executor.execute(()->{
             try(PublicHttp http=new PublicHttp(run.cancelled)) {
                 run.http=http;run.scope=scope;run.background=background;
-                // A messaging gap is an explicit limited research window; recheck
-                // previously permitted pages after eight minutes, not forbidden URLs.
-                boolean queueWeb=background && scope==0 && ScheduledQueue.enabled(app)
-                    && QueueGapDiscovery.enabled(app);
-                data.renewOldPages(queueWeb?ScheduledQueue.MIN_GAP:TimeUnit.HOURS.toMillis(24));
+                // Source rotation favors NEW pending websites. Previously checked
+                // business pages cool down for 24h even while a message queue is
+                // active; an 8-minute queue gap is for new research, not hammering sites.
+                data.renewOldPages(TimeUnit.HOURS.toMillis(24));
                 List<DiscoveryProvider> providers=new ArrayList<>();
                 android.content.SharedPreferences settings=app.getSharedPreferences("discovery",Context.MODE_PRIVATE);
                 run.maxPages=Math.max(1,Math.min(6,settings.getInt("pages_per_host",4)));
@@ -74,7 +94,14 @@ final class DiscoveryCoordinator {
                     int seedCount=PublicWebsiteContactsProvider.DEFAULT_SEEDS.size();
                     int cursor=Math.floorMod(settings.getInt("buyer_seed_cursor",0),seedCount);
                     run.buyerSeedCursor=cursor;
-                    settings.edit().putInt("buyer_seed_cursor",(cursor+run.maxHosts)%seedCount).apply();
+                    int importedCount=(int)data.importedSourceCount();
+                    int sourceCursor=importedCount==0?0:Math.floorMod(
+                        settings.getInt("imported_source_cursor",0),importedCount);
+                    run.importedSourceCursor=sourceCursor;
+                    settings.edit()
+                        .putInt("buyer_seed_cursor",(cursor+run.maxHosts)%seedCount)
+                        .putInt("imported_source_cursor",importedCount==0?0:
+                            (sourceCursor+importedCursorStep(run.maxHosts))%importedCount).apply();
                     if(app.getSharedPreferences("exa_ui_settings",Context.MODE_PRIVATE).getBoolean("online_enabled",false))
                         providers.add(new ExaProvider(app));
                     String endpoint=settings.getString("searxng","");
@@ -82,7 +109,11 @@ final class DiscoveryCoordinator {
                     providers.add(new PublicWebsiteContactsProvider(http::get));
                 }
                 if(scope!=0) {
-                    if(background) {
+                    if(run.telegramBackground) {
+                        // Only after explicit opt-in + saved READY TDLib session.
+                        // One public group keyword per scheduled pass.
+                        providers.add(new TelegramPublicGroupProvider(TdlibEngine.get(app)));
+                    } else if(background) {
                         settings.edit().putBoolean("telegram_pending",true).apply();
                         run.note="وب دوره‌ای اجرا شد؛ بخش تلگرام در ورود بعدی به حساب آماده اجرا می‌شود.";
                     } else providers.add(new TelegramPublicGroupProvider(TdlibEngine.get(app)));
@@ -97,10 +128,17 @@ final class DiscoveryCoordinator {
                 if(run.cancelled.get())run.state="stopped";
                 finishDeferredFlag(app,run);
                 run.emit();running=null;
+                if(webScope)webScanGate.set(false);
                 main.post(()->{synchronized(this){for(Listener l:new ArrayList<>(listeners))l.changed(snapshot());}});
             }
         });
         return true;
+    }
+    /** Match source rotation stride to reserved Excel host slots.
+     * Advancing by the total host cap would permanently skip every other
+     * imported source when the Excel list size is divisible by that cap. */
+    static int importedCursorStep(int hostLimit) {
+        return Math.max(1,hostLimit/2);
     }
     // Shared by deterministic tests; a failing optional provider cannot abort independent ones.
     static void execute(Run run,List<DiscoveryProvider> providers) {
@@ -134,13 +172,14 @@ final class DiscoveryCoordinator {
         if(running==null){
             JSONObject saved=snapshot();
             try{saved.put("state","stopped").put("note","جست‌وجو و انتظار برای تلگرام متوقف شد؛ نتایج قبلی محفوظ است.");}catch(Exception ignored){}
-            data.put("run",saved);
+            data.put(progressKey,saved);
         }
     }
     void stopForeground(){Run run=running;if(run!=null&&!run.background)stop();}
     void stopQueuePass(){Run run=running;if(run!=null&&run.queuePass)stop();}
+    void stopBackgroundTelegram(){Run run=running;if(run!=null&&run.telegramBackground)stop();}
     private void publish(Run run) {
-        JSONObject value=run.json();data.put("run",value);
+        JSONObject value=run.json();data.put(progressKey,value);
         main.post(()->{synchronized(this){for(Listener l:new ArrayList<>(listeners))l.changed(value);}});
     }
     static String describe(JSONObject s) {
@@ -150,17 +189,19 @@ final class DiscoveryCoordinator {
             " | موضوع "+s.optInt("topic")+" / "+s.optInt("total")+
             "\nصفحات بررسی‌شده: "+s.optInt("pages")+" | گروه‌های جدید: "+s.optInt("groups")+
             "\nشماره‌های عمومی ذخیره‌شدهٔ جدید: "+s.optInt("saved")+" | تکراری: "+s.optInt("duplicates")+
-            "\nخطا / محدودیت دسترسی: "+s.optInt("errors")+
+            "\nزمان سپری‌شدهٔ کاوش: "+(s.optLong("elapsed_ms",0)/1000)+" ثانیه"+
+            " | خطا / محدودیت دسترسی: "+s.optInt("errors")+
             (s.optString("note").isEmpty()?"":"\n"+s.optString("note"));
     }
     static final class Run {
         final DiscoveryData data;final AtomicBoolean cancelled;
-        final long deadline=System.currentTimeMillis()+TimeUnit.MINUTES.toMillis(6);
+        final long startedAt=System.currentTimeMillis();
+        final long deadline=startedAt+TimeUnit.MINUTES.toMillis(6);
         final List<String> seeds=new ArrayList<>();
         List<String> topics=Arrays.asList(TOPICS);
         PublicHttp http;Runnable changed;
-        int pages,saved,groups,duplicates,errors,topic,total,scope,maxPages=4,maxHosts=4,buyerSeedCursor;
-        boolean background,telegramPending,queuePass,telegramCompleted,interrupted;
+        int pages,saved,groups,duplicates,errors,topic,total,scope,maxPages=4,maxHosts=4,buyerSeedCursor,importedSourceCursor;
+        boolean background,telegramPending,queuePass,telegramBackground,telegramCompleted,interrupted;
         String state="running",current="",note="";
         Run(DiscoveryData data,AtomicBoolean cancelled,Runnable changed){this.data=data;this.cancelled=cancelled;this.changed=changed;}
         boolean active(){return !cancelled.get()&&!Thread.currentThread().isInterrupted()&&System.currentTimeMillis()<deadline;}
@@ -169,7 +210,7 @@ final class DiscoveryCoordinator {
             while(System.currentTimeMillis()<until) {if(!active())throw new InterruptedIOException();try{Thread.sleep(Math.min(100,Math.max(1,until-System.currentTimeMillis())));}catch(InterruptedException e){Thread.currentThread().interrupt();throw new InterruptedIOException();}}
             if(!active())throw new InterruptedIOException();
         }
-        void error(String message){errors++;note=message;emit();}
+        synchronized void error(String message){errors++;note=message;emit();}
         String webTopic(String provider) {
             int index=Math.floorMod(data.get(provider+"_topic_cycle").optInt("next"),topics.size());
             return topics.get(index);
@@ -178,7 +219,7 @@ final class DiscoveryCoordinator {
             int index=Math.floorMod(data.get(provider+"_topic_cycle").optInt("next"),topics.size());
             data.put(provider+"_topic_cycle",new JSONObject().put("next",(index+1)%topics.size()));
         }
-        JSONObject json(){JSONObject o=new JSONObject();try {o.put("scope",scope).put("state",state).put("current",current).put("topic",topic).put("total",total).put("pages",pages).put("saved",saved).put("groups",groups).put("duplicates",duplicates).put("errors",errors).put("note",note).put("updated",System.currentTimeMillis());}catch(Exception ignored){}return o;}
-        void emit(){if(changed!=null)changed.run();else data.put("run",json());}
+        synchronized JSONObject json(){JSONObject o=new JSONObject();try {o.put("scope",scope).put("state",state).put("current",current).put("topic",topic).put("total",total).put("pages",pages).put("saved",saved).put("groups",groups).put("duplicates",duplicates).put("errors",errors).put("note",note).put("updated",System.currentTimeMillis()).put("elapsed_ms",System.currentTimeMillis()-startedAt);}catch(Exception ignored){}return o;}
+        synchronized void emit(){if(changed!=null)changed.run();else data.put("run",json());}
     }
 }

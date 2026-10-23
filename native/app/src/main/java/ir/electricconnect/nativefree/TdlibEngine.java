@@ -1083,6 +1083,8 @@ final class TdlibEngine {
 
     synchronized void logout() {
         DiscoverySchedule.disable(app);
+        // An explicit Telegram logout revokes unattended access, too.
+        TelegramBackgroundSchedule.setEnabled(app,false);
         DiscoveryCoordinator.get(app).stop();
         if(client==null){result("خروج",false,"نشست فعالی وجود ندارد.");return;}
         client.send(new TdApi.LogOut(),o->respond("خروج",o));

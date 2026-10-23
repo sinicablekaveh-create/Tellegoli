@@ -51,12 +51,76 @@ public class StoreTest {
             old.execSQL("INSERT INTO drafts VALUES(1,'گروه','پیش‌نویس','DRAFT',1)");old.setVersion(2);
         }
         try(MainActivity.Store upgraded=new MainActivity.Store(context)) {
-            assertEquals(2,upgraded.count("records"));assertEquals(1,upgraded.count("drafts"));assertEquals(4,upgraded.getReadableDatabase().getVersion());
+            assertEquals(2,upgraded.count("records"));assertEquals(1,upgraded.count("drafts"));assertEquals(6,upgraded.getReadableDatabase().getVersion());
             assertEquals("Migrated v2 database must contain the new Excel group table",0,new DiscoveryData(upgraded).importedGroupCount());
             assertEquals("یادداشت اصلی",upgraded.find("قبلی",0,10).get(1).source);
             assertFalse(upgraded.insertPublicBusinessPhone("جدید","+98 21 56519931","https://cable.example/contact"));assertEquals(2,upgraded.count("records"));
         }
         assertEquals("local session sentinel",new String(java.nio.file.Files.readAllBytes(marker.toPath()),java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test public void versionFiveMigrationKeepsBothLegacyDuplicateContacts()throws Exception {
+        try(SQLiteDatabase old=context.openOrCreateDatabase("electric_connect_native_free.db",0,null)) {
+            old.execSQL("CREATE TABLE records (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                +" title TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '',"
+                +" source TEXT NOT NULL DEFAULT '', search_text TEXT NOT NULL DEFAULT '',"
+                +" created INTEGER NOT NULL, provider TEXT NOT NULL DEFAULT 'قدیمی / دستی',"
+                +" retrieved INTEGER NOT NULL DEFAULT 0, UNIQUE(title,phone))");
+            old.execSQL("CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                +" destination TEXT NOT NULL, message TEXT NOT NULL,"
+                +" status TEXT NOT NULL DEFAULT 'DRAFT', created INTEGER NOT NULL)");
+            old.execSQL("INSERT INTO records(title,phone,category,source,search_text,created)"
+                +" VALUES('الف','۰۲۱۵۶۵۱۹۹۳۱','تجاری','دستی','الف',1)");
+            old.execSQL("INSERT INTO records(title,phone,category,source,search_text,created)"
+                +" VALUES('ب','02156519931','تجاری','دستی','ب',2)");
+            old.setVersion(5);
+        }
+        try(MainActivity.Store store=new MainActivity.Store(context)) {
+            assertEquals(6,store.getReadableDatabase().getVersion());
+            assertEquals("Migration must not silently delete existing duplicates",2,store.count("records"));
+            try(android.database.Cursor indexed=store.getReadableDatabase().rawQuery(
+                    "SELECT COUNT(*) FROM records WHERE canonical_phone=?",new String[]{"02156519931"})) {
+                assertTrue(indexed.moveToFirst());
+                assertEquals(2,indexed.getInt(0));
+            }
+            assertFalse(store.insertPublicBusinessPhone("ج","02156519931",
+                "https://buyer.example/contact"));
+        }
+    }
+
+    @Test public void indexedCanonicalPhoneLookupPreservesLegacyFormattingAndDeletion()throws Exception {
+        try(MainActivity.Store store=new MainActivity.Store(context)) {
+            assertTrue(store.insertRecord("شرکت قبلی","۰۲۱-۵۶۵۱۹۹۳۱","برق","دستی"));
+            assertFalse("An equivalent public number must be rejected without scanning all records",
+                store.insertPublicBusinessPhone("شرکت جدید","+98 21 56519931","https://buyer.example/contact"));
+            assertEquals(1,store.count("records"));
+            try(android.database.Cursor index=store.getReadableDatabase().rawQuery(
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_record_canonical_phone'",null)) {
+                assertTrue("Canonical phone lookup should have its own SQLite index",index.moveToFirst());
+            }
+            long original=store.find("",0,5).get(0).id;
+            store.deleteRecord(original);
+            assertTrue("Deleted manual number must not leave a stale deduplication key",
+                store.insertPublicBusinessPhone("شرکت جدید","02156519931","https://buyer.example/contact"));
+            assertEquals(1,store.count("records"));
+        }
+    }
+
+    @Test public void excelImportsUseTheSameCanonicalIndexAsLiveDiscovery()throws Exception {
+        try(MainActivity.Store store=new MainActivity.Store(context)) {
+            assertTrue(store.insertRecord("رکورد اصلی","۰۲۱-۵۶۵۱۹۹۳۱","دستی","دفتر"));
+            UnifiedExcelImport.Parsed imported=new UnifiedExcelImport.Parsed();
+            imported.contacts.add(new UnifiedExcelImport.Contact(
+                "شرکت تکراری","02156519931","تجاری","https://buyer.example/contact"));
+            imported.contacts.add(new UnifiedExcelImport.Contact(
+                "شرکت تازه","۰۹۱۲۱۲۳۴۵۶۷","تجاری","https://buyer.example/contact"));
+            UnifiedExcelImport.Report result=UnifiedExcelImport.apply(store,imported);
+            assertEquals(1,result.contacts);
+            assertEquals(1,result.rejected);
+            assertEquals(2,store.count("records"));
+            assertFalse(store.insertPublicBusinessPhone("شرکت سوم","09121234567",
+                "https://buyer.example/contact"));
+        }
     }
 
     @Test public void upgradesExistingRecordsAndPreservesDrafts() {
