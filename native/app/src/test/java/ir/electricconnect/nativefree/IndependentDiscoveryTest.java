@@ -25,6 +25,8 @@ public class IndependentDiscoveryTest {
     private Context app;private MainActivity.Store store;private DiscoveryData data;
     @Before public void setup() {
         ReflectionHelpers.setStaticField(DiscoveryCoordinator.class,"shared",null);
+        ReflectionHelpers.setStaticField(DiscoveryCoordinator.class,"webBackground",null);
+        ReflectionHelpers.setStaticField(DiscoveryCoordinator.class,"telegramBackground",null);
         app=RuntimeEnvironment.getApplication();app.deleteDatabase("electric_connect_native_free.db");
         app.getSharedPreferences("exa_ui_settings",0).edit().clear().commit();
         store=new MainActivity.Store(app);data=new DiscoveryData(store);
@@ -378,6 +380,30 @@ public class IndependentDiscoveryTest {
         deferred.cancelled.set(false);
         DiscoveryCoordinator.finishDeferredFlag(app,deferred);
         assertFalse("Only successful completed scan can clear pending",options.getBoolean("telegram_pending",true));
+    }
+
+    @Test public void webAndTelegramDiscoveryRunOnIndependentPersistedEngineSlots() throws Exception {
+        DiscoveryCoordinator web=DiscoveryCoordinator.webBackground(app);
+        DiscoveryCoordinator telegram=DiscoveryCoordinator.telegramBackground(app);
+        DiscoveryCoordinator foreground=DiscoveryCoordinator.get(app);
+        assertNotSame("Web and Telegram must have independent running slots",web,telegram);
+        assertNotSame(web,foreground);
+        assertNotSame(telegram,foreground);
+        assertEquals("run_web",web.progressKey);
+        assertEquals("run_telegram",telegram.progressKey);
+        web.data.put("run_web",new JSONObject().put("state","finished")
+            .put("saved",2).put("pages",4));
+        telegram.data.put("run_telegram",new JSONObject().put("state","finished")
+            .put("groups",3));
+        assertEquals(2,web.snapshot().optInt("saved"));
+        assertEquals(0,web.snapshot().optInt("groups"));
+        assertEquals(3,telegram.snapshot().optInt("groups"));
+        assertEquals(0,telegram.snapshot().optInt("saved"));
+        assertEquals(0,foreground.snapshot().optInt("saved"));
+        assertEquals(0,foreground.snapshot().optInt("groups"));
+        assertNotSame("Independent work must not wait for the other executor",
+            ReflectionHelpers.getField(web,"executor"),
+            ReflectionHelpers.getField(telegram,"executor"));
     }
 
     @Test public void periodicWebWorkIsQuarterHourlyConstrainedAndOptOutCancelsUniqueWork()throws Exception {
