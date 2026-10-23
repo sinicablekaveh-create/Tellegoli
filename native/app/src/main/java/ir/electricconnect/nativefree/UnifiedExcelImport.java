@@ -234,22 +234,22 @@ final class UnifiedExcelImport {
         r.rejected=parsed.rejected;
         db.beginTransaction();
         try {
+            // One indexed lookup for each distinct incoming phone instead of
+            // normalizing all historic numbers on every Excel import.
             Set<String> seen=new HashSet<>();
-            try(Cursor c=db.rawQuery("SELECT phone FROM records WHERE phone<>''",null)){
-                while(c.moveToNext()){
-                    String p=PublicPhoneDiscovery.normalizeIranPhone(c.getString(0));
-                    if(p!=null)seen.add(p);
-                }
-            }
             for(Contact item:parsed.contacts){
                 String phone=PublicPhoneDiscovery.normalizeIranPhone(item.phone);
                 if(phone==null||!seen.add(phone)){r.rejected++;continue;}
+                try(Cursor existing=db.rawQuery("SELECT 1 FROM records WHERE canonical_phone=? LIMIT 1",
+                        new String[]{phone})) {
+                    if(existing.moveToFirst()){r.rejected++;continue;}
+                }
                 ContentValues v=new ContentValues();
                 String name=item.name.trim();
                 if(name.length()>240)name=name.substring(0,240);
                 String category=item.category.isEmpty()?"ورودی Excel":item.category;
                 String source=item.source.isEmpty()?"ورود فایل توسط کاربر":item.source;
-                v.put("title",name);v.put("phone",phone);
+                v.put("title",name);v.put("phone",phone);v.put("canonical_phone",phone);
                 v.put("category",category);v.put("source",source);
                 v.put("search_text",SearchText.normalize(name+" "+phone+" "+category+" "+source));
                 v.put("created",System.currentTimeMillis());v.put("retrieved",System.currentTimeMillis());
