@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Requested only when a user explicitly starts the notification-backed service. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Network used for user-initiated Exa searches, Bot API tests and TDLib account session. -->
     <application
         android:name=".DiscoveryApplication"
