@@ -459,6 +459,8 @@ public final class MainActivity extends Activity {
     String webMode=web.getBoolean("periodic",false)?"فعال، برنامه‌ریزی تقریبی ۱۵ دقیقه":"خاموش";
     return "۱. جستجوی وب: "+webMode+
         " | آخرین تلاش: "+formatTime(web.getLong("last_attempt",0))+
+        "\n   آخرین جستجوی سریع: "+formatTime(web.getLong("fast_web_last_started",0))+
+        " | سرویس: "+ActiveWebSearchService.status(this)+
         "\n   سایت‌های واردشده: "+new DiscoveryData(store).importedSourceCount()+
         " | صفحات بررسی‌شده: "+donePages+
         "\n   اجرای مستقل وب: "+webRun.optString("state","آماده")+
@@ -651,6 +653,14 @@ public final class MainActivity extends Activity {
     automaticCard.addView(webToggle);
     automaticCard.addView(text("پس از فعال‌سازی یک جستجوی فوری درخواست می‌شود؛ سپس تقریباً هر ۱۵ دقیقه. حداکثر ۳ سایت مستقل هم‌زمان بررسی می‌شوند و صفحات تماس اولویت دارند. منابع Excel هم چرخشی پردازش می‌شوند. زمان دقیق به اندروید بستگی دارد.",12,false));
     card(automaticCard);
+    LinearLayout activeCard=newCard();
+    activeCard.addView(text("جستجوی فعال وب هر ۳ دقیقه",17,true));
+    activeCard.addView(text("فقط با شروع دستی، با اعلان قابل توقف و حداکثر ۵ ساعت در هر جلسه؛ Android 15 سقف مشترک ۶ ساعت در هر ۲۴ ساعت دارد. صف و تلگرام مستقل هستند.",12,false));
+    ElectricUi.addBlock(this,activeCard,ElectricUi.button(this,
+        "شروع جستجوی فعال",this::startActiveWebSearch),7);
+    ElectricUi.addBlock(this,activeCard,ElectricUi.button(this,
+        "توقف جستجوی فعال",this::stopActiveWebSearch,true,false),7);
+    card(activeCard);
 
     LinearLayout telegramCard=newCard();
     telegramCard.addView(text("جستجوی خودکار گروه‌های تلگرام",17,true));
@@ -706,6 +716,39 @@ public final class MainActivity extends Activity {
     note("موتور وب و شماره‌های تجاری، موتور گروه‌های عمومی تلگرام و صف پیام سه بخش جدا هستند؛ کشف اطلاعات هیچ پیام یا عضویتی ایجاد نمی‌کند.");
   }
 
+  /** Starts only after a visible user tap; never from a worker or boot. */
+  private void startActiveWebSearch() {
+    if(android.os.Build.VERSION.SDK_INT>=33
+        && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+            !=android.content.pm.PackageManager.PERMISSION_GRANTED) {
+      requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},5193);
+      return;
+    }
+    try {
+      startForegroundService(new Intent(this,ActiveWebSearchService.class)
+          .setAction(ActiveWebSearchService.ACTION_START));
+      toast("درخواست جستجوی فعال ثبت شد؛ اعلان را بررسی کن.");
+    } catch(RuntimeException e) {toast("اندروید اجازهٔ شروع سرویس را نداد.");}
+  }
+  @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results) {
+    super.onRequestPermissionsResult(code,permissions,results);
+    if(code==5193) {
+      if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)
+        startActiveWebSearch();
+      else toast("برای اعلان قابل توقف، اجازهٔ اعلان لازم است.");
+    }
+  }
+  private void stopActiveWebSearch() {
+    try {
+      if(ActiveWebSearchService.enabled(this))
+        startService(new Intent(this,ActiveWebSearchService.class)
+            .setAction(ActiveWebSearchService.ACTION_STOP));
+      else stopService(new Intent(this,ActiveWebSearchService.class));
+      toast("توقف سرویس فعال درخواست شد.");
+    } catch(RuntimeException error) {
+      stopService(new Intent(this,ActiveWebSearchService.class));
+    }
+  }
   private void setBackgroundTelegram(boolean enabled) {
     TelegramBackgroundSchedule.setEnabled(this,enabled);
     if(enabled && !TdlibEngine.get(this).hasCredentials())
@@ -726,6 +769,7 @@ public final class MainActivity extends Activity {
       toast("جستجوی فوری وب درخواست شد؛ سپس حدود هر ۱۵ دقیقه منابع بررسی می‌شوند و صفحات تماس اولویت دارند.");
     } else {
       DiscoverySchedule.disable(this);
+      stopActiveWebSearch();
       // Switching off WEB must not cancel unrelated Telegram group discovery.
       DiscoveryCoordinator.webBackground(this).stop();
       toast("جستجوی خودکار وب خاموش شد. جستجوی تلگرام جداگانه کنترل می‌شود و اطلاعات قبلی محفوظ‌اند.");
@@ -933,6 +977,9 @@ public final class MainActivity extends Activity {
     automatic.setOnCheckedChangeListener((v,on)->setAutomaticDiscovery(on));
     page.addView(automatic);
     note("موتور مستقل وب و شماره‌یاب در پس‌زمینه با WorkManager اجرا می‌شود؛ اجرای دقیق چرخهٔ ۱۵ دقیقه‌ای تضمین نمی‌شود. موتور گروه‌های عمومی تلگرام نیز مستقل است و به حساب TDLib قبلاً واردشده نیاز دارد.");
+    note("حالت جستجوی فعال: "+ActiveWebSearchService.status(this));
+    button("شروع جستجوی فعال با اعلان",this::startActiveWebSearch);
+    button("توقف جستجوی فعال",this::stopActiveWebSearch);
     button("تنظیمات منابع و محدودیت جستجو",()->DiscoveryUi.sources(this));
     android.content.SharedPreferences schedule=getSharedPreferences("discovery",MODE_PRIVATE);
     note("آخرین تلاش: "+formatTime(schedule.getLong("last_attempt",0))+" | آخرین دریافت موفق: "+formatTime(schedule.getLong("last_success",0))+" | شمارهٔ جدید: "+schedule.getInt("last_new",0));
