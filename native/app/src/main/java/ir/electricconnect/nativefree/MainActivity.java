@@ -642,7 +642,7 @@ public final class MainActivity extends Activity {
         .getBoolean("periodic",true));
     webToggle.setOnCheckedChangeListener((v,enabled)->setAutomaticDiscovery(enabled));
     automaticCard.addView(webToggle);
-    automaticCard.addView(text("هر ۱۵ دقیقه یک نوبت وب‌گردی برنامه‌ریزی می‌شود؛ سایت‌های واردشده از Excel هم چرخشی بررسی می‌شوند. وقتی صف پیام فعال باشد، بین ارسال‌های ۸ دقیقه‌ای هم جستجوی وب انجام می‌شود. زمان دقیق در اندروید تضمین نمی‌شود.",12,false));
+    automaticCard.addView(text("پس از فعال‌سازی یک جستجوی فوری درخواست می‌شود؛ سپس تقریباً هر ۱۵ دقیقه. حداکثر ۳ سایت مستقل هم‌زمان بررسی می‌شوند و صفحات تماس اولویت دارند. منابع Excel هم چرخشی پردازش می‌شوند. زمان دقیق به اندروید بستگی دارد.",12,false));
     card(automaticCard);
 
     LinearLayout telegramCard=newCard();
@@ -654,7 +654,7 @@ public final class MainActivity extends Activity {
     telegramToggle.setOnCheckedChangeListener((v,enabled)->setBackgroundTelegram(enabled));
     telegramCard.addView(telegramToggle);
     telegramCard.addView(text(
-        "با اجازهٔ شما و حساب قبلاً واردشدهٔ TDLib، تقریباً هر ۱۵ دقیقه یک عبارت گروه عمومی بررسی می‌شود؛ اندروید ممکن است آن را به تأخیر بیندازد. جستجو، عضویت یا ارسال به افراد ناشناس انجام نمی‌شود.",
+        "با اجازهٔ شما و حساب آمادهٔ TDLib، اولین جستجوی گروه عمومی فوراً در صف قرار می‌گیرد؛ سپس تقریباً هر ۱۵ دقیقه یک عبارت بررسی می‌شود. زمان دقیق به اندروید بستگی دارد. عضویت و ارسال خودکار انجام نمی‌شود.",
         12,false));
     card(telegramCard);
 
@@ -703,7 +703,7 @@ public final class MainActivity extends Activity {
     TelegramBackgroundSchedule.setEnabled(this,enabled);
     if(enabled && !TdlibEngine.get(this).hasCredentials())
       toast("زمان‌بندی روشن شد؛ برای جستجوی تلگرام ابتدا در بخش اتصال تلگرام وارد حساب شوید.");
-    else toast(enabled?"جستجوی دوره‌ای گروه‌های عمومی در پس‌زمینه روشن شد؛ اجرای دقیق به اندروید بستگی دارد.":
+    else toast(enabled?"اولین کاوش گروه‌ها در صف فوری قرار گرفت؛ سپس بررسی دوره‌ای انجام می‌شود. اجرای دقیق به اندروید بستگی دارد.":
         "جستجوی پس‌زمینهٔ تلگرام خاموش شد؛ گروه‌های ذخیره‌شده محفوظ‌اند.");
     if(liveStatus!=null)liveStatus.setText(liveSummary());
   }
@@ -716,7 +716,7 @@ public final class MainActivity extends Activity {
       DiscoverySchedule.enable(this);
       ((DiscoveryApplication)getApplication()).maybeAutoDiscover();
       if(ScheduledQueue.enabled(this))QueueGapDiscovery.scheduleWeb(this);
-      toast("جستجوی وب با فاصلهٔ تقریبی ۱۵ دقیقه فعال شد؛ در فاصلهٔ پیام‌های تأییدشده هم بررسی می‌شود.");
+      toast("جستجوی فوری وب درخواست شد؛ سپس حدود هر ۱۵ دقیقه منابع بررسی می‌شوند و صفحات تماس اولویت دارند.");
     } else {
       DiscoverySchedule.disable(this);
       QueueGapDiscovery.cancel(this);
