@@ -17,9 +17,8 @@ public final class DiscoveryApplication extends Application {
             queueHandler.postDelayed(this,15000L);
         }
     };
-    /** One bounded automatic buyer search per day while the user uses the app.
-     * Resume a pending public-group scan only once TDLib becomes READY.
-     * Nothing is sent or joined automatically. */
+    /** Independent opted-in web discovery and foreground READY resumption.
+     * Neither discovery path sends or joins anything. */
     void maybeAutoDiscover() {
         SharedPreferences prefs=getSharedPreferences("discovery",MODE_PRIVATE);
         TdlibEngine engine=TdlibEngine.get(this);
@@ -41,15 +40,13 @@ public final class DiscoveryApplication extends Application {
                 .putLong("telegram_retry_after",now+30L*60*1000).apply();
             return;
         }
-        if(!prefs.getBoolean("sales_auto_enabled",true))return;
-        // Free public business discovery requires neither Telegram login nor Exa.
-        // User-controlled daily and periodic options determine whether it runs.
-        if(telegramConfigured)engine.connect();
+        // A public buyer/phone scan is its own engine. Opening the app can
+        // start one bounded pass immediately; WorkManager persists the schedule.
+        // Neither TDLib readiness nor queue state is required for this scan.
+        if(!prefs.getBoolean("periodic",false))return;
         long previous=prefs.getLong("sales_auto_started",0);
         if(now>=previous && now-previous<24L*60*60*1000)return;
-        // Without a configured Telegram account, do not request a headless Telegram search.
-        int scope=telegramConfigured?2:0;
-        if(discovery.start(scope,false))
+        if(DiscoveryCoordinator.webBackground(this).start(0,true))
             prefs.edit().putLong("sales_auto_started",now).apply();
     }
     void telegramReady() {
