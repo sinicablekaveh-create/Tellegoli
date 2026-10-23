@@ -189,7 +189,7 @@ final class DiscoveryCoordinator {
             while(System.currentTimeMillis()<until) {if(!active())throw new InterruptedIOException();try{Thread.sleep(Math.min(100,Math.max(1,until-System.currentTimeMillis())));}catch(InterruptedException e){Thread.currentThread().interrupt();throw new InterruptedIOException();}}
             if(!active())throw new InterruptedIOException();
         }
-        void error(String message){errors++;note=message;emit();}
+        synchronized void error(String message){errors++;note=message;emit();}
         String webTopic(String provider) {
             int index=Math.floorMod(data.get(provider+"_topic_cycle").optInt("next"),topics.size());
             return topics.get(index);
@@ -198,7 +198,7 @@ final class DiscoveryCoordinator {
             int index=Math.floorMod(data.get(provider+"_topic_cycle").optInt("next"),topics.size());
             data.put(provider+"_topic_cycle",new JSONObject().put("next",(index+1)%topics.size()));
         }
-        JSONObject json(){JSONObject o=new JSONObject();try {o.put("scope",scope).put("state",state).put("current",current).put("topic",topic).put("total",total).put("pages",pages).put("saved",saved).put("groups",groups).put("duplicates",duplicates).put("errors",errors).put("note",note).put("updated",System.currentTimeMillis());}catch(Exception ignored){}return o;}
-        void emit(){if(changed!=null)changed.run();else data.put("run",json());}
+        synchronized JSONObject json(){JSONObject o=new JSONObject();try {o.put("scope",scope).put("state",state).put("current",current).put("topic",topic).put("total",total).put("pages",pages).put("saved",saved).put("groups",groups).put("duplicates",duplicates).put("errors",errors).put("note",note).put("updated",System.currentTimeMillis());}catch(Exception ignored){}return o;}
+        synchronized void emit(){if(changed!=null)changed.run();else data.put("run",json());}
     }
 }
