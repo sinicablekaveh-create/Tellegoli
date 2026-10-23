@@ -59,6 +59,35 @@ public class StoreTest {
         assertEquals("local session sentinel",new String(java.nio.file.Files.readAllBytes(marker.toPath()),java.nio.charset.StandardCharsets.UTF_8));
     }
 
+    @Test public void versionFiveMigrationKeepsBothLegacyDuplicateContacts()throws Exception {
+        try(SQLiteDatabase old=context.openOrCreateDatabase("electric_connect_native_free.db",0,null)) {
+            old.execSQL("CREATE TABLE records (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                +" title TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '',"
+                +" source TEXT NOT NULL DEFAULT '', search_text TEXT NOT NULL DEFAULT '',"
+                +" created INTEGER NOT NULL, provider TEXT NOT NULL DEFAULT 'قدیمی / دستی',"
+                +" retrieved INTEGER NOT NULL DEFAULT 0, UNIQUE(title,phone))");
+            old.execSQL("CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                +" destination TEXT NOT NULL, message TEXT NOT NULL,"
+                +" status TEXT NOT NULL DEFAULT 'DRAFT', created INTEGER NOT NULL)");
+            old.execSQL("INSERT INTO records(title,phone,category,source,search_text,created)"
+                +" VALUES('الف','۰۲۱۵۶۵۱۹۹۳۱','تجاری','دستی','الف',1)");
+            old.execSQL("INSERT INTO records(title,phone,category,source,search_text,created)"
+                +" VALUES('ب','02156519931','تجاری','دستی','ب',2)");
+            old.setVersion(5);
+        }
+        try(MainActivity.Store store=new MainActivity.Store(context)) {
+            assertEquals(6,store.getReadableDatabase().getVersion());
+            assertEquals("Migration must not silently delete existing duplicates",2,store.count("records"));
+            try(android.database.Cursor indexed=store.getReadableDatabase().rawQuery(
+                    "SELECT COUNT(*) FROM records WHERE canonical_phone=?",new String[]{"02156519931"})) {
+                assertTrue(indexed.moveToFirst());
+                assertEquals(2,indexed.getInt(0));
+            }
+            assertFalse(store.insertPublicBusinessPhone("ج","02156519931",
+                "https://buyer.example/contact"));
+        }
+    }
+
     @Test public void indexedCanonicalPhoneLookupPreservesLegacyFormattingAndDeletion()throws Exception {
         try(MainActivity.Store store=new MainActivity.Store(context)) {
             assertTrue(store.insertRecord("شرکت قبلی","۰۲۱-۵۶۵۱۹۹۳۱","برق","دستی"));
