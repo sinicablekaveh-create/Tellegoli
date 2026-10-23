@@ -76,10 +76,12 @@ final class TelegramBackgroundSchedule {
     static void onAccountReady(Context context) {
         if(!enabled(context))return;
         SharedPreferences p=prefs(context);
-        long last=p.getLong("last_attempt",0);
-        // No burst of duplicate requests while the user is navigating screens.
-        if(last!=0 && System.currentTimeMillis()-last<TimeUnit.MINUTES.toMillis(15)
-                && !"account".equals(p.getString("state","")))return;
+        // First enabled scan is already queued. Only retry if it actually ran
+        // without an account; one follow-up is permitted per 15-minute window.
+        if(p.getLong("last_attempt",0)==0 || !"account".equals(p.getString("state","")))return;
+        long now=System.currentTimeMillis();
+        if(now-p.getLong("account_retry_queued",0)<TimeUnit.MINUTES.toMillis(15))return;
+        p.edit().putLong("account_retry_queued",now).apply();
         try {
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_IMMEDIATE,ExistingWorkPolicy.REPLACE,firstRequest());
