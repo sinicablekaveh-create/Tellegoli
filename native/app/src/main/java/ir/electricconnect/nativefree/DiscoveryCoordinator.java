@@ -14,22 +14,36 @@ final class DiscoveryCoordinator {
     static final String[] TOPICS={"پیمانکار برق صنعتی","پیمانکار تاسیسات الکتریکی","مجری کابل کشی","برقکار پروژه صنعتی","پیمانکار برق ساختمان","مجری برق سوله","شرکت EPC صنعتی","پیمانکار برق کارخانه","مجری تاسیسات تجاری","پیمانکار برق پروژه"};
     interface Listener {void changed(JSONObject state);}
     private static DiscoveryCoordinator shared;
+    private static DiscoveryCoordinator webBackground;
+    private static DiscoveryCoordinator telegramBackground;
+    /** Distinct persisted tasks: neither background discovery blocks the other. */
+    static synchronized DiscoveryCoordinator webBackground(Context context) {
+        if(webBackground==null)webBackground=new DiscoveryCoordinator(context.getApplicationContext(),"run_web");
+        return webBackground;
+    }
+    static synchronized DiscoveryCoordinator telegramBackground(Context context) {
+        if(telegramBackground==null)telegramBackground=new DiscoveryCoordinator(context.getApplicationContext(),"run_telegram");
+        return telegramBackground;
+    }
     static synchronized DiscoveryCoordinator get(Context context) {
         if(shared==null)shared=new DiscoveryCoordinator(context.getApplicationContext());return shared;
     }
     final Context app;
     final DiscoveryData data;
+    final String progressKey;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private final Set<Listener> listeners=new HashSet<>();
     private volatile Run running;
-    DiscoveryCoordinator(Context app) {
-        this.app=app;data=new DiscoveryData(new MainActivity.Store(app));
+    DiscoveryCoordinator(Context app) {this(app,"run");}
+    private DiscoveryCoordinator(Context app,String progressKey) {
+        this.app=app;this.progressKey=progressKey;
+        data=new DiscoveryData(new MainActivity.Store(app));
     }
     synchronized void attach(Listener listener){listeners.add(listener);listener.changed(snapshot());}
     synchronized void detach(Listener listener){listeners.remove(listener);}
     JSONObject snapshot(){
-        JSONObject saved=data.get("run");
+        JSONObject saved=data.get(progressKey);
         if(running==null&&"running".equals(saved.optString("state"))) {
             try {saved.put("state","interrupted").put("note","اجرا قطع شد؛ برای ادامه شروع را بزنید. نتایج ذخیره شده‌اند.");}catch(Exception ignored){}
         }
@@ -153,14 +167,14 @@ final class DiscoveryCoordinator {
         if(running==null){
             JSONObject saved=snapshot();
             try{saved.put("state","stopped").put("note","جست‌وجو و انتظار برای تلگرام متوقف شد؛ نتایج قبلی محفوظ است.");}catch(Exception ignored){}
-            data.put("run",saved);
+            data.put(progressKey,saved);
         }
     }
     void stopForeground(){Run run=running;if(run!=null&&!run.background)stop();}
     void stopQueuePass(){Run run=running;if(run!=null&&run.queuePass)stop();}
     void stopBackgroundTelegram(){Run run=running;if(run!=null&&run.telegramBackground)stop();}
     private void publish(Run run) {
-        JSONObject value=run.json();data.put("run",value);
+        JSONObject value=run.json();data.put(progressKey,value);
         main.post(()->{synchronized(this){for(Listener l:new ArrayList<>(listeners))l.changed(value);}});
     }
     static String describe(JSONObject s) {
