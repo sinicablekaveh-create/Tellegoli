@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit;
 
 final class DiscoverySchedule {
     static final String WORK="tellegoli-public-web-discovery";
+    static final String FIRST_WORK="tellegoli-public-web-first-scan";
     static final String LEGACY_WORK="electric-public-discovery-daily";
     static final int WEB_INTERVAL_MINUTES=15;
     /**
@@ -44,13 +45,22 @@ final class DiscoverySchedule {
         return app.getSharedPreferences("discovery",Context.MODE_PRIVATE)
             .getBoolean("periodic_15_minutes",true)?WEB_INTERVAL_MINUTES:1440;
     }
+    private static Constraints onlineConstraints() {
+        return new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresBatteryNotLow(true).build();
+    }
+    /** Starts an approved public-web scan as soon as Android constraints permit. */
+    static OneTimeWorkRequest firstRequest() {
+        return new OneTimeWorkRequest.Builder(DiscoveryWorker.class)
+            .setConstraints(onlineConstraints()).build();
+    }
     static PeriodicWorkRequest request(Context app) {
         int minutes=intervalMinutes(app);
         return new PeriodicWorkRequest.Builder(DiscoveryWorker.class,minutes,TimeUnit.MINUTES)
             // The first unattended scan is due after the first interval;
             // foreground one-tap discovery remains immediately available.
             .setInitialDelay(minutes,TimeUnit.MINUTES)
-            .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresBatteryNotLow(true).build())
+            .setConstraints(onlineConstraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL,30,TimeUnit.MINUTES).build();
     }
     static void enable(Context app) {
@@ -58,6 +68,7 @@ final class DiscoverySchedule {
         WorkManager manager=WorkManager.getInstance(app);
         manager.cancelUniqueWork(LEGACY_WORK);
         manager.enqueueUniquePeriodicWork(WORK,ExistingPeriodicWorkPolicy.UPDATE,request(app));
+        manager.enqueueUniqueWork(FIRST_WORK,ExistingWorkPolicy.REPLACE,firstRequest());
     }
     static void setFifteenMinutes(Context app,boolean enabled) {
         app.getSharedPreferences("discovery",Context.MODE_PRIVATE).edit().putBoolean("periodic_15_minutes",enabled).apply();
@@ -65,6 +76,6 @@ final class DiscoverySchedule {
     }
     static void disable(Context app) {
         app.getSharedPreferences("discovery",Context.MODE_PRIVATE).edit().putBoolean("periodic",false).putBoolean("telegram_pending",false).apply();
-        try {WorkManager manager=WorkManager.getInstance(app);manager.cancelUniqueWork(WORK);manager.cancelUniqueWork(LEGACY_WORK);}catch(IllegalStateException ignored) { /* Before WorkManager initialization the disabled preference still gates the worker. */ }
+        try {WorkManager manager=WorkManager.getInstance(app);manager.cancelUniqueWork(WORK);manager.cancelUniqueWork(FIRST_WORK);manager.cancelUniqueWork(LEGACY_WORK);}catch(IllegalStateException ignored) { /* Before WorkManager initialization the disabled preference still gates the worker. */ }
     }
 }
