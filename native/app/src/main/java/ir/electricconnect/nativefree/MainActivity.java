@@ -681,7 +681,7 @@ public final class MainActivity extends Activity {
     ElectricUi.addBlock(this,page,stats,12);
 
     note("منابع وب واردشده با اکسل: "+new DiscoveryData(store).importedSourceCount()+" سایت");
-    ElectricUi.section(this,page,"جستجوی وب ۱۵ دقیقه‌ای + صف ۸ دقیقه‌ای",null);
+    ElectricUi.section(this,page,"جستجوی مستقل وب و تلگرام، جدا از صف پیام",null);
     int waitingMessages=0;
     for(JSONObject item:ScheduledQueue.snapshot(getApplicationContext()))
       if("PENDING".equals(item.optString("status")))waitingMessages++;
@@ -703,7 +703,7 @@ public final class MainActivity extends Activity {
     statusCard.addView(text("گزارش جستجو",17,true));
     discoveryUi=new DiscoveryUi(this,statusCard,null,true);
     card(statusCard);
-    note("جستجوی وب مستقل و خودکار است؛ فقط صف پیام‌های ازقبل‌تأییدشده می‌تواند با فاصلهٔ حداقل ۸ دقیقه ارسال کند.");
+    note("موتور وب و شماره‌های تجاری، موتور گروه‌های عمومی تلگرام و صف پیام سه بخش جدا هستند؛ کشف اطلاعات هیچ پیام یا عضویتی ایجاد نمی‌کند.");
   }
 
   private void setBackgroundTelegram(boolean enabled) {
@@ -717,7 +717,7 @@ public final class MainActivity extends Activity {
 
   private void setAutomaticDiscovery(boolean enabled) {
     android.content.SharedPreferences preferences=getSharedPreferences("discovery",MODE_PRIVATE);
-    preferences.edit().putBoolean("sales_auto_enabled",enabled).putInt("scope",2).apply();
+    preferences.edit().putBoolean("sales_auto_enabled",enabled).apply();
     if(enabled) {
       preferences.edit().putLong("sales_auto_started",0).apply();
       DiscoverySchedule.enable(this);
