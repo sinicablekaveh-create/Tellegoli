@@ -23,9 +23,9 @@ final class FastWebDiscovery {
         } else if(!prefs.getBoolean("periodic",false))return false;
         long now=System.currentTimeMillis();
         if(!isDue(now,prefs.getLong(LAST,0)))return false;
-        DiscoveryCoordinator coordinator=DiscoveryCoordinator.get(app);
-        if(coordinator.isRunning())return false;
-        if(!coordinator.start(0,activeService,activeService))return false;
+        DiscoveryCoordinator coordinator=DiscoveryCoordinator.webBackground(app);
+        if(coordinator.isRunning() || DiscoveryCoordinator.get(app).isRunning())return false;
+        if(!coordinator.start(0,true))return false;
         prefs.edit().putLong(LAST,now).apply();
         return true;
     }
