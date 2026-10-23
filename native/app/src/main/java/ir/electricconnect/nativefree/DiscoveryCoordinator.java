@@ -16,6 +16,8 @@ final class DiscoveryCoordinator {
     private static DiscoveryCoordinator shared;
     private static DiscoveryCoordinator webBackground;
     private static DiscoveryCoordinator telegramBackground;
+    /** Global guard: foreground, fast mode and WorkManager must not crawl simultaneously. */
+    private static final AtomicBoolean webScanGate=new AtomicBoolean();
     /** Distinct persisted tasks: neither background discovery blocks the other. */
     static synchronized DiscoveryCoordinator webBackground(Context context) {
         if(webBackground==null)webBackground=new DiscoveryCoordinator(context.getApplicationContext(),"run_web");
@@ -53,6 +55,8 @@ final class DiscoveryCoordinator {
     synchronized boolean start(int scope,boolean background) {
         if(running!=null)return false;
         if(background && scope==1 && !TelegramBackgroundSchedule.enabled(app))return false;
+        final boolean webScope=scope==0 || scope==2;
+        if(webScope && !webScanGate.compareAndSet(false,true))return false;
         Run run=new Run(data,new AtomicBoolean(),null);
         run.topics=LeadKeywords.all(data);
         run.scope=scope;run.background=background;
@@ -124,6 +128,7 @@ final class DiscoveryCoordinator {
                 if(run.cancelled.get())run.state="stopped";
                 finishDeferredFlag(app,run);
                 run.emit();running=null;
+                if(webScope)webScanGate.set(false);
                 main.post(()->{synchronized(this){for(Listener l:new ArrayList<>(listeners))l.changed(snapshot());}});
             }
         });
