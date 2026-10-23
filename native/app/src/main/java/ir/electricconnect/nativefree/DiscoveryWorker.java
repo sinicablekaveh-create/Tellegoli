@@ -18,17 +18,10 @@ public final class DiscoveryWorker extends Worker {
         Context app=getApplicationContext();
         android.content.SharedPreferences preferences=app.getSharedPreferences("discovery",Context.MODE_PRIVATE);
         if(!preferences.getBoolean("periodic",false))return Result.success();
-        int selected=selectedScope(app);
+        // Web discovery has its OWN coordinator and work schedule. The chosen
+        // UI tab/foreground scope and approved message queue never gate it.
         preferences.edit().putLong("last_attempt",System.currentTimeMillis()).apply();
-        // User selected groups only: defer TDLib access until an authorized
-        // account is READY in the foreground. Never crawl business sites instead.
-        if(selected==1) {
-            preferences.edit().putBoolean("telegram_pending",true).apply();
-            return Result.success();
-        }
-        // This 15-minute periodic worker searches PUBLIC WEB ONLY, never TDLib.
-        // Telegram group discovery belongs to the READY, foreground flow.
-        DiscoveryCoordinator coordinator=DiscoveryCoordinator.get(app);
+        DiscoveryCoordinator coordinator=DiscoveryCoordinator.webBackground(app);
         if(!coordinator.start(0,true))return Result.success();
         try {
             while(coordinator.isRunning()&&!isStopped())Thread.sleep(200);
