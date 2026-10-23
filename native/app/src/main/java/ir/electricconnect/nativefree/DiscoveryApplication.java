@@ -53,6 +53,9 @@ public final class DiscoveryApplication extends Application {
             prefs.edit().putLong("sales_auto_started",now).apply();
     }
     void telegramReady() {
+        // If opt-in ran before login, give the first group scan another safe
+        // chance after READY. This never sends or joins anything.
+        TelegramBackgroundSchedule.onAccountReady(this);
         if(started>0) {queueHandler.removeCallbacks(queueDiscoveryCheck);queueHandler.post(queueDiscoveryCheck);}
     }
 
