@@ -163,6 +163,39 @@ public class IndependentDiscoveryTest {
             url.startsWith("https://buyer-imported.example/"));
     }
 
+    @Test public void twoIndependentPublicSitesScanConcurrentlyWithoutParallelRequestsToOneSite()throws Exception {
+        DiscoveryCoordinator.Run pass=run();
+        pass.seeds.clear();
+        pass.seeds.add("https://first-buyer.example/");
+        pass.seeds.add("https://second-buyer.example/");
+        pass.maxHosts=2;pass.maxPages=1;
+        CountDownLatch bothRobotsRequested=new CountDownLatch(2);
+        java.util.concurrent.ConcurrentHashMap<String,AtomicInteger> perHost=new java.util.concurrent.ConcurrentHashMap<>();
+        PublicWebsiteContactsProvider website=new PublicWebsiteContactsProvider((url,allowed)->{
+            String host=URI.create(url).getHost();
+            perHost.computeIfAbsent(host,key->new AtomicInteger()).incrementAndGet();
+            if(url.endsWith("/robots.txt")) {
+                bothRobotsRequested.countDown();
+                try {
+                    if(!bothRobotsRequested.await(5,TimeUnit.SECONDS))
+                        throw new IOException("Independent websites were not scanned concurrently");
+                } catch(InterruptedException e) {
+                    Thread.currentThread().interrupt();throw new InterruptedIOException();
+                }
+                return page(200,"User-agent: *\\nAllow: /","text/plain");
+            }
+            String phone=host.startsWith("first")?"02156519931":"02156519932";
+            return page(200,html(phone),"text/html");
+        });
+        website.discover(pass);
+        assertEquals(0,pass.errors);
+        assertEquals(2,pass.pages);
+        assertEquals(2,pass.saved);
+        assertEquals(2,store.count("records"));
+        assertEquals(2,perHost.get("first-buyer.example").get());
+        assertEquals(2,perHost.get("second-buyer.example").get());
+    }
+
     @Test public void exa403FallsBackToIndependentSourceWithoutRepeatingPaidRequest()throws Exception {
         AtomicInteger exa=new AtomicInteger();
         DiscoveryCoordinator.Run r=run();
@@ -358,6 +391,10 @@ public class IndependentDiscoveryTest {
         androidx.work.PeriodicWorkRequest periodic=TelegramBackgroundSchedule.request();
         assertEquals(TimeUnit.MINUTES.toMillis(15),periodic.getWorkSpec().intervalDuration);
         assertEquals(TimeUnit.MINUTES.toMillis(15),periodic.getWorkSpec().initialDelay);
+        androidx.work.OneTimeWorkRequest first=TelegramBackgroundSchedule.firstRequest();
+        assertEquals(0,first.getWorkSpec().initialDelay);
+        assertEquals(androidx.work.NetworkType.CONNECTED,
+            first.getWorkSpec().constraints.getRequiredNetworkType());
         assertEquals(androidx.work.NetworkType.CONNECTED,
             periodic.getWorkSpec().constraints.getRequiredNetworkType());
         assertTrue(periodic.getWorkSpec().constraints.requiresBatteryNotLow());
@@ -368,6 +405,9 @@ public class IndependentDiscoveryTest {
         assertTrue(TelegramBackgroundSchedule.enabled(app));
         assertEquals(1,androidx.work.WorkManager.getInstance(app)
             .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK).get().size());
+        assertEquals("Enabling Telegram must queue a first scan without waiting 15 minutes",
+            1,androidx.work.WorkManager.getInstance(app)
+                .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK_IMMEDIATE).get().size());
         assertFalse("Telegram background opt-in must not force on public web",
             app.getSharedPreferences("discovery",0).getBoolean("periodic",true));
         TelegramBackgroundSchedule.setEnabled(app,false);
@@ -375,6 +415,10 @@ public class IndependentDiscoveryTest {
         assertEquals(androidx.work.WorkInfo.State.CANCELLED,
             androidx.work.WorkManager.getInstance(app)
                 .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK)
+                .get().get(0).getState());
+        assertEquals(androidx.work.WorkInfo.State.CANCELLED,
+            androidx.work.WorkManager.getInstance(app)
+                .getWorkInfosForUniqueWork(TelegramBackgroundSchedule.WORK_IMMEDIATE)
                 .get().get(0).getState());
         assertFalse("Background Telegram must never run without opt-in",
             DiscoveryCoordinator.get(app).start(1,true));
