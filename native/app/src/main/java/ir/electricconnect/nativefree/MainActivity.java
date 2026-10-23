@@ -960,12 +960,13 @@ public final class MainActivity extends Activity {
     }
   }
   static final class Store extends SQLiteOpenHelper {
-    Store(Context context) {super(context, "electric_connect_native_free.db", null, 5);}
+    Store(Context context) {super(context, "electric_connect_native_free.db", null, 6);}
     @Override public void onCreate(SQLiteDatabase db) {
-      db.execSQL("CREATE TABLE records (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', search_text TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, UNIQUE(title, phone))");
+      db.execSQL("CREATE TABLE records (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', search_text TEXT NOT NULL DEFAULT '', canonical_phone TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, UNIQUE(title, phone))");
       db.execSQL("CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT, destination TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'DRAFT', created INTEGER NOT NULL)");
       db.execSQL("CREATE INDEX idx_record_title ON records(title)");
       db.execSQL("CREATE INDEX idx_record_category ON records(category)");
+      db.execSQL("CREATE INDEX idx_record_canonical_phone ON records(canonical_phone)");
       db.execSQL("CREATE INDEX idx_drafts_created ON drafts(created)");
       addDiscoveryColumns(db);
       DiscoveryData.create(db);
@@ -985,6 +986,21 @@ public final class MainActivity extends Activity {
       if(oldVersion<3) {addDiscoveryColumns(db);DiscoveryData.create(db);}
       if(oldVersion<4) DiscoveryData.create(db);
       if(oldVersion<5) DiscoveryData.create(db);
+      if(oldVersion<6) {
+        // Preserve every legacy row, including differently formatted duplicate phones.
+        // Only add a non-unique index, so migrations never discard user data.
+        db.execSQL("ALTER TABLE records ADD COLUMN canonical_phone TEXT NOT NULL DEFAULT ''");
+        try(Cursor cursor=db.rawQuery("SELECT id,phone FROM records WHERE phone<>''",null)) {
+          while(cursor.moveToNext()) {
+            String canonical=PublicPhoneDiscovery.normalizeIranPhone(cursor.getString(1));
+            if(canonical==null)continue;
+            ContentValues values=new ContentValues();
+            values.put("canonical_phone",canonical);
+            db.update("records",values,"id=?",new String[]{Long.toString(cursor.getLong(0))});
+          }
+        }
+        db.execSQL("CREATE INDEX idx_record_canonical_phone ON records(canonical_phone)");
+      }
     }
     private static void addDiscoveryColumns(SQLiteDatabase db) {
       db.execSQL("ALTER TABLE records ADD COLUMN provider TEXT NOT NULL DEFAULT 'قدیمی / دستی'");
@@ -1009,12 +1025,12 @@ public final class MainActivity extends Activity {
           || PublicPhoneDiscovery.canonicalSource(source)==null)return false;
       SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
       try {
+      // Indexed lookup rather than re-normalizing the entire historic database
+      // for every newly discovered business number.
       try(Cursor cursor=db.rawQuery(
-          "SELECT phone FROM records WHERE phone <> ''",null)){
-        while(cursor.moveToNext()){
-          if(canonical.equals(PublicPhoneDiscovery.normalizeIranPhone(cursor.getString(0))))
-            return false;
-        }
+          "SELECT 1 FROM records WHERE canonical_phone=? LIMIT 1",
+          new String[]{canonical})) {
+        if(cursor.moveToFirst())return false;
       }
       boolean inserted=insertRecord(title.trim(),canonical,"تلفن عمومی کسب‌وکار صنعت برق",source);
       if(inserted) {
@@ -1028,6 +1044,8 @@ public final class MainActivity extends Activity {
     boolean insertRecord(String title,String phone,String category,String source) {
       ContentValues values = new ContentValues();
       values.put("title",title);values.put("phone",phone);
+      String canonical=PublicPhoneDiscovery.normalizeIranPhone(phone);
+      values.put("canonical_phone",canonical==null?"":canonical);
       values.put("category",category);values.put("source",source);
       values.put("search_text", SearchText.normalize(title + " " + phone + " " + category + " " + source));
       values.put("created",System.currentTimeMillis());
