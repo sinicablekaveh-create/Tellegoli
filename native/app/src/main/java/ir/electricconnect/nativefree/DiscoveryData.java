@@ -65,8 +65,12 @@ final class DiscoveryData {
             arguments.add("https://"+host+"/");
         }
         arguments.add(Integer.toString(limit));
+        // Contact/about pages often contain business phone numbers. Prefer them
+        // within the SAME approved host, without consuming another site's slot.
         String sql="SELECT url FROM discovery_urls WHERE state IN ('pending','interrupted','retry') AND attempts<3"
-            +" AND ("+where+") ORDER BY attempts,updated,url LIMIT ?";
+            +" AND ("+where+") ORDER BY CASE WHEN LOWER(url) LIKE '%/contact%'"
+            +" OR url LIKE '%/تماس%' OR LOWER(url) LIKE '%/about%' THEN 0 ELSE 1 END,"
+            +" attempts,updated,url LIMIT ?";
         try(Cursor c=store.getReadableDatabase().rawQuery(sql,arguments.toArray(new String[0]))) {
             while(c.moveToNext())out.add(c.getString(0));
         }
