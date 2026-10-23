@@ -5,6 +5,8 @@ import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 import androidx.work.Constraints;
 import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.ExistingWorkPolicy;
+import androidx.work.OneTimeWorkRequest;
 import androidx.work.NetworkType;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
@@ -21,6 +23,7 @@ import java.util.concurrent.TimeUnit;
  */
 final class TelegramBackgroundSchedule {
     static final String WORK="tellegoli-public-telegram-group-discovery";
+    static final String WORK_IMMEDIATE="tellegoli-public-telegram-first-scan";
     static final String PREF="telegram_background_discovery";
     static final long INTERVAL_MINUTES=15L;
     private TelegramBackgroundSchedule(){}
@@ -29,12 +32,20 @@ final class TelegramBackgroundSchedule {
         return context.getApplicationContext().getSharedPreferences(PREF,Context.MODE_PRIVATE);
     }
     static boolean enabled(Context context){return prefs(context).getBoolean("enabled",false);}
+    private static Constraints connected() {
+        return new Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresBatteryNotLow(true).build();
+    }
+    /** One initial attempt after explicit opt-in; the periodic 15-minute floor remains unchanged. */
+    static OneTimeWorkRequest firstRequest() {
+        return new OneTimeWorkRequest.Builder(GroupWorker.class)
+            .setConstraints(connected()).build();
+    }
     static PeriodicWorkRequest request() {
         return new PeriodicWorkRequest.Builder(GroupWorker.class,INTERVAL_MINUTES,TimeUnit.MINUTES)
             .setInitialDelay(INTERVAL_MINUTES,TimeUnit.MINUTES)
-            .setConstraints(new Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .setRequiresBatteryNotLow(true).build())
+            .setConstraints(connected())
             .build();
     }
     static void bootstrap(Context context) {
@@ -45,15 +56,34 @@ final class TelegramBackgroundSchedule {
         }catch(IllegalStateException ignored){/* WorkManager initializes later. */}
     }
     static void setEnabled(Context context,boolean allowed) {
+        boolean wasEnabled=enabled(context);
         prefs(context).edit().putBoolean("enabled",allowed)
             .putString("state",allowed?"scheduled":"off").apply();
         try {
             WorkManager work=WorkManager.getInstance(context);
-            if(allowed)work.enqueueUniquePeriodicWork(
-                WORK,ExistingPeriodicWorkPolicy.UPDATE,request());
-            else work.cancelUniqueWork(WORK);
+            if(allowed) {
+                work.enqueueUniquePeriodicWork(WORK,ExistingPeriodicWorkPolicy.UPDATE,request());
+                if(!wasEnabled)work.enqueueUniqueWork(
+                    WORK_IMMEDIATE,ExistingWorkPolicy.KEEP,firstRequest());
+            } else {
+                work.cancelUniqueWork(WORK);
+                work.cancelUniqueWork(WORK_IMMEDIATE);
+            }
         }catch(IllegalStateException ignored){/* Preference still guards every worker. */}
         if(!allowed)DiscoveryCoordinator.get(context).stopBackgroundTelegram();
+    }
+    /** Retry an initial account-not-ready attempt once TDLib reports READY. Never initiate login. */
+    static void onAccountReady(Context context) {
+        if(!enabled(context))return;
+        SharedPreferences p=prefs(context);
+        long last=p.getLong("last_attempt",0);
+        // No burst of duplicate requests while the user is navigating screens.
+        if(last!=0 && System.currentTimeMillis()-last<TimeUnit.MINUTES.toMillis(15)
+                && !"account".equals(p.getString("state","")))return;
+        try {
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                WORK_IMMEDIATE,ExistingWorkPolicy.REPLACE,firstRequest());
+        }catch(IllegalStateException ignored){/* Periodic work remains registered. */}
     }
     static String describe(Context context) {
         SharedPreferences p=prefs(context);
