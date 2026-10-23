@@ -13,6 +13,9 @@ public final class DiscoveryApplication extends Application {
             if(started<=0)return;
             // Foreground only, never background polling of an account.
             maybeAutoDiscover();
+            // App is visible: one eligible public-web scan every three minutes.
+            // The helper gates on settings and rejects overlapping work.
+            FastWebDiscovery.maybeStart(DiscoveryApplication.this,false);
             QueueGapDiscovery.maybeSearchGroups(DiscoveryApplication.this);
             queueHandler.postDelayed(this,15000L);
         }
