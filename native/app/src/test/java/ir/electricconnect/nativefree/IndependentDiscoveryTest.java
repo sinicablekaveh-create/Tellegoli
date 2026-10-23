@@ -163,6 +163,19 @@ public class IndependentDiscoveryTest {
             url.startsWith("https://buyer-imported.example/"));
     }
 
+    @Test public void contactPagesArePrioritizedWithinTheSamePublicHost() {
+        String host="buyer-priority.example";
+        String services="https://"+host+"/services";
+        String contact="https://"+host+"/contact";
+        assertTrue(data.queue(services));
+        assertTrue(data.queue(contact));
+        assertEquals(Arrays.asList(contact,services),
+            data.pendingForHosts(Collections.singleton(host),10));
+        data.finishUrl(contact,"done");
+        assertEquals(Collections.singletonList(services),
+            data.pendingForHosts(Collections.singleton(host),10));
+    }
+
     @Test public void twoIndependentPublicSitesScanConcurrentlyWithoutParallelRequestsToOneSite()throws Exception {
         DiscoveryCoordinator.Run pass=run();
         pass.seeds.clear();
@@ -373,6 +386,10 @@ public class IndependentDiscoveryTest {
         androidx.work.PeriodicWorkRequest request=DiscoverySchedule.request(app);
         assertEquals(TimeUnit.MINUTES.toMillis(15),request.getWorkSpec().intervalDuration);
         assertEquals(TimeUnit.MINUTES.toMillis(15),request.getWorkSpec().initialDelay);
+        androidx.work.OneTimeWorkRequest firstWeb=DiscoverySchedule.firstRequest();
+        assertEquals(0,firstWeb.getWorkSpec().initialDelay);
+        assertEquals(androidx.work.NetworkType.CONNECTED,
+            firstWeb.getWorkSpec().constraints.getRequiredNetworkType());
         app.getSharedPreferences("discovery",0).edit().putBoolean("periodic_15_minutes",false).commit();
         androidx.work.PeriodicWorkRequest daily=DiscoverySchedule.request(app);
         assertEquals(TimeUnit.HOURS.toMillis(24),daily.getWorkSpec().intervalDuration);
@@ -380,9 +397,13 @@ public class IndependentDiscoveryTest {
         assertEquals(androidx.work.NetworkType.CONNECTED,request.getWorkSpec().constraints.getRequiredNetworkType());assertTrue(request.getWorkSpec().constraints.requiresBatteryNotLow());
         DiscoverySchedule.enable(app);DiscoverySchedule.enable(app);
         assertEquals(1,androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork(DiscoverySchedule.WORK).get().size());
+        assertEquals(1,androidx.work.WorkManager.getInstance(app)
+            .getWorkInfosForUniqueWork(DiscoverySchedule.FIRST_WORK).get().size());
         DiscoverySchedule.disable(app);
         assertFalse(app.getSharedPreferences("discovery",0).getBoolean("periodic",true));
         assertEquals(androidx.work.WorkInfo.State.CANCELLED,androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork(DiscoverySchedule.WORK).get().get(0).getState());
+        assertEquals(androidx.work.WorkInfo.State.CANCELLED,androidx.work.WorkManager.getInstance(app)
+            .getWorkInfosForUniqueWork(DiscoverySchedule.FIRST_WORK).get().get(0).getState());
     }
 
     @Test public void telegramBackgroundScheduleIsOptInIndependentOfWebAndPersistent()throws Exception {
