@@ -61,6 +61,13 @@ public final class DiscoveryApplication extends Application {
 
     @Override public void onCreate() {
         super.onCreate();
+        // A killed process cannot retain a live opt-in FGS. Never pretend it is
+        // still running or restart it from boot/application initialization.
+        if(ActiveWebSearchService.enabled(this))
+            getSharedPreferences(ActiveWebSearchService.PREF,MODE_PRIVATE).edit()
+                .putBoolean("enabled",false)
+                .putString("status","جلسهٔ قبلی متوقف شد؛ برای شروع دوباره دکمه را بزنید.")
+                .apply();
         // Restore independent, user-enabled group discovery after Android
         // restarts the process; no UI or messaging consent is inferred.
         TelegramBackgroundSchedule.bootstrap(this);
