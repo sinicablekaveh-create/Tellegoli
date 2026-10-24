@@ -10,14 +10,11 @@ workflows:
     environment:
       java: 17
     scripts:
-      - name: Prepare exact Gradle 8.11.1 and Android SDK 35
+      - name: Prepare Gradle wrapper and Android SDK 35
         script: |
           set -euo pipefail
-          mkdir -p "$CM_BUILD_DIR/.ci-gradle" "$CM_BUILD_DIR/native"
-          curl --fail --location --retry 3 --silent --show-error \
-            https://services.gradle.org/distributions/gradle-8.11.1-bin.zip \
-            -o "$CM_BUILD_DIR/.ci-gradle/gradle-8.11.1-bin.zip"
-          unzip -q "$CM_BUILD_DIR/.ci-gradle/gradle-8.11.1-bin.zip" -d "$CM_BUILD_DIR/.ci-gradle"
+          # The wrapper pins Gradle 8.11.1 and verifies its distribution SHA-256.
+          chmod +x "$CM_BUILD_DIR/native/gradlew"
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/native/local.properties"
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
           # On Codemagic macOS M2, sdkmanager is installed but may not be on PATH.
@@ -38,7 +35,7 @@ workflows:
           set -euo pipefail
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
           env -u EC_SIGNING_STORE -u EC_SIGNING_PASSWORD -u EC_SIGNING_ALIAS \
-            "$CM_BUILD_DIR/.ci-gradle/gradle-8.11.1/bin/gradle" \
+            "$CM_BUILD_DIR/native/gradlew" \
             --no-daemon -p native \
             testDebugUnitTest lintDebug assembleDebug
       - name: Verify APK version, Android signature, native TDLib and checksum
