@@ -31,5 +31,13 @@ render.experimental.xml
 # Google Services (e.g. APIs or Firebase)
 google-services.json
 
+# Local secrets and generated APK delivery folders
+.env
+.env.*
+!.env.example
+.ci-gradle/
+dist/
+dist-codemagic/
+
 # Android Profiling
 *.hprof

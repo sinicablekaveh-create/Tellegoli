@@ -86,7 +86,12 @@ final class TdlibEngine {
     }
     private final Context app;
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final Vault vault;
+    interface CredentialStore {
+        boolean has(String field);
+        void put(String field,String value) throws Exception;
+        String get(String field) throws Exception;
+    }
+    private final CredentialStore vault;
     private final Map<Long,ChatInfo> groups = new HashMap<>();
     private final Map<Long,ChatOverview> allKnownChats = new HashMap<>();
     private final Map<Long,Integer> allChatLists = new HashMap<>();
@@ -110,6 +115,8 @@ final class TdlibEngine {
     }
     private Session client;
     private int sessionGeneration;
+    private boolean waitingForParameters, parametersPending;
+    private long credentialsVersion, parameterRequestVersion;
     private final Map<Long,ChatInfo> knownGroups = new HashMap<>();
     private final Map<Long,Integer> groupLists = new HashMap<>();
     private volatile Listener listener;
@@ -119,8 +126,12 @@ final class TdlibEngine {
     private long lastAttempt;
 
     TdlibEngine(Context context) {
+        this(context,new Vault(context));
+    }
+
+    TdlibEngine(Context context,CredentialStore credentialStore) {
         app = context;
-        vault = new Vault(context);
+        vault = credentialStore;
         lastAttempt = context.getSharedPreferences("tdlib_controls", Context.MODE_PRIVATE).getLong("last_attempt",0);
     }
 
@@ -229,9 +240,10 @@ final class TdlibEngine {
         try {
             vault.put("app_credentials", id+":"+hash);
         }catch(Exception e){result("API",false,"ذخیرهٔ رمزگذاری‌شدهٔ API انجام نشد.");return;}
+        credentialsVersion++;
         result("API",true,"کلیدهای برنامه فقط روی همین گوشی ذخیره شدند.");
-        connect();
-        // TDLib will send WaitTdlibParameters update and use stored keys.
+        if(client!=null && waitingForParameters)configure();
+        else connect();
     }
 
     synchronized void connect() {
@@ -258,7 +270,10 @@ final class TdlibEngine {
     }
 
     private synchronized void configure() {
-        if(client==null)return;
+        if(client==null || !waitingForParameters || parametersPending)return;
+        final Session active=client;
+        final long requestVersion=++parameterRequestVersion;
+        final long submittedCredentialsVersion=credentialsVersion;
         try {
             String keys = vault.get("app_credentials");
             if(keys==null){state("NEED_API","اطلاعات API ثبت نشده است.");return;}
@@ -267,6 +282,8 @@ final class TdlibEngine {
             TdApi.SetTdlibParameters params=new TdApi.SetTdlibParameters();
             params.apiId=Integer.parseInt(keys.substring(0,index));
             params.apiHash=keys.substring(index+1);
+            if(params.apiId<1 || !params.apiHash.matches("[0-9a-fA-F]{32}"))
+                throw new IllegalStateException("Bad credentials");
             params.databaseDirectory=app.getFilesDir().getAbsolutePath()+"/tdlib-account-db";
             params.filesDirectory=app.getFilesDir().getAbsolutePath()+"/tdlib-files";
             params.useMessageDatabase=true;
@@ -276,9 +293,31 @@ final class TdlibEngine {
             params.systemLanguageCode="fa";
             params.deviceModel=Build.MODEL;
             params.applicationVersion=BuildConfig.VERSION_NAME;
-            client.send(params, obj->respond("تنظیم TDLib",obj));
+            parametersPending=true;
+            // Set the state before send: a synchronous callback may advance authorization.
             state("CONFIGURING","پارامترهای رسمی TDLib تنظیم شدند.");
-        }catch(Exception e){state("CONFIG_ERROR","خطا در خواندن یا تنظیم شناسه‌های API.");}
+            active.send(params, obj->{
+                synchronized(TdlibEngine.this) {
+                    if(client!=active || requestVersion!=parameterRequestVersion
+                            || !waitingForParameters)return;
+                    if(obj instanceof TdApi.Error) {
+                        parametersPending=false;
+                        // Telegram errors must not echo submitted credentials to the UI.
+                        state("CONFIG_ERROR","تلگرام تنظیمات API را نپذیرفت؛ شناسه‌ها را بررسی و دوباره ذخیره کنید.");
+                        result("تنظیم TDLib",false,"خطای تلگرام "+((TdApi.Error)obj).code+" در تنظیم API.");
+                        if(submittedCredentialsVersion!=credentialsVersion)configure();
+                    }else {
+                        // Keep the guard until TDLib leaves WaitTdlibParameters.
+                        respond("تنظیم TDLib",obj);
+                    }
+                }
+            });
+        }catch(Exception e){
+            if(client==active && requestVersion==parameterRequestVersion && waitingForParameters) {
+                parametersPending=false;
+                state("CONFIG_ERROR","خطا در خواندن یا تنظیم شناسه‌های API.");
+            }
+        }
     }
 
     private synchronized void handleUpdate(TdApi.Object obj) {
@@ -339,6 +378,8 @@ final class TdlibEngine {
     }
 
     private synchronized void onAuthorization(TdApi.AuthorizationState auth) {
+        waitingForParameters=auth instanceof TdApi.AuthorizationStateWaitTdlibParameters;
+        if(!waitingForParameters)parametersPending=false;
         if(auth instanceof TdApi.AuthorizationStateWaitTdlibParameters) {
             configure();
         } else if(auth instanceof TdApi.AuthorizationStateWaitPhoneNumber) {
@@ -1088,9 +1129,9 @@ final class TdlibEngine {
         client.send(new TdApi.LogOut(),o->respond("خروج",o));
     }
 
-    /** API hash is stored encrypted at rest in the Android Keystore.
+    /** API credentials are encrypted in private preferences with an Android Keystore key.
         TDLib's private database is isolated in internal app storage with backup disabled. */
-    private static final class Vault {
+    private static final class Vault implements CredentialStore {
         private static final String KEY="electric_connect_tdlib_api_v1";
         private final Context context;
         Vault(Context context){this.context=context;}
@@ -1106,15 +1147,15 @@ final class TdlibEngine {
                     .setKeySize(256).build());
             return generator.generateKey();
         }
-        boolean has(String field){return prefs().contains(field+"_data");}
-        void put(String field,String value)throws Exception{
+        public boolean has(String field){return prefs().contains(field+"_data");}
+        public void put(String field,String value)throws Exception{
             Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE,getKey());
             byte[] encrypted=cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
             prefs().edit().putString(field+"_data",Base64.encodeToString(encrypted,Base64.NO_WRAP))
                 .putString(field+"_nonce",Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)).apply();
         }
-        String get(String field)throws Exception{
+        public String get(String field)throws Exception{
             String c=prefs().getString(field+"_data",null);
             String n=prefs().getString(field+"_nonce",null);
             if(c==null||n==null)return null;
